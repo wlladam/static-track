@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}History - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Training log</p>
+<h1 class="display">PROGRESS&nbsp;HISTORY</h1>
+<p class="subtitle">Am I improving? On what? How fast? What's my best? Filter, drill in, and find out.</p>
+
+<section class="panel filter-bar">
+  <div class="filter-group">
+    <span class="field-label" style="width: auto; margin: 0 0.6rem 0 0;">Time range</span>
+    {% for key, label in range_options %}
+      <a class="filter-chip {{ 'is-active' if range_key == key }}" href="{{ url_for('main.history', **merge_query(range=key)) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="filter-group">
+    <span class="field-label" style="width: auto; margin: 0 0.6rem 0 0;">Move family</span>
+    {% for key, label in family_options %}
+      <a class="filter-chip {{ 'is-active' if family_key == key }}" href="{{ url_for('main.history', **merge_query(family=key)) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if attempts|length == 0 %}
+<section class="panel">
+  <p class="subtitle" style="margin: 0;">
+    {% if range_key == 'all' and family_key == 'all' %}
+      No sessions logged yet — upload a video to get started. Once you've got a few in, this page turns into your progress dashboard.
+    {% else %}
+      No sessions match the current filters. <a href="{{ url_for('main.history') }}">Clear filters</a> to see everything.
+    {% endif %}
+  </p>
+</section>
+{% else %}
+
+<section class="stat-callout-grid">
+  <div class="stat-callout">
+    <p class="stat-callout-value">{{ summary.total_sessions }}</p>
+    <p class="stat-callout-label">Sessions logged</p>
+  </div>
+  <div class="stat-callout">
+    <p class="stat-callout-value">{{ summary.current_streak }}<small>{{ 'd' if summary.current_streak }}</small></p>
+    <p class="stat-callout-label">Current streak</p>
+  </div>
+  <div class="stat-callout">
+    <p class="stat-callout-value">{{ summary.best_score if summary.best_score is not none else '—' }}</p>
+    <p class="stat-callout-label">Best score ever</p>
+  </div>
+  <div class="stat-callout">
+    <p class="stat-callout-value stat-callout-value-text">{{ summary.most_trained_move or '—' }}</p>
+    <p class="stat-callout-label">Most-trained move</p>
+  </div>
+  <div class="stat-callout">
+    <p class="stat-callout-value">{{ summary.total_time_under_tension }}</p>
+    <p class="stat-callout-label">Time under tension</p>
+  </div>
+</section>
+
+<section class="panel chart-panel">
+  <p class="panel-title"><span class="dot"></span>Score&nbsp;over&nbsp;time</p>
+  {% if score_chart_svg %}
+    <p class="subtitle" style="margin-top: -0.5rem;">Raw form score for every scored session. Hover or tap a point for the exact date, move, and score.</p>
+    {{ score_chart_svg | safe }}
+  {% else %}
+    <p class="subtitle" style="margin: 0;">Log at least two scored sessions to see a trend line here.</p>
+  {% endif %}
+</section>
+
+<section class="panel chart-panel">
+  <p class="panel-title"><span class="dot"></span>Difficulty-adjusted&nbsp;progress</p>
+  <p class="subtitle" style="margin-top: -0.5rem;">
+    Raw score scaled by how hard the progression was (tuck &lt; advanced tuck &lt; straddle &lt; full &lt; one-arm), so this
+    answers "am I getting genuinely stronger" rather than "did I score well on whatever I happened to attempt." Can
+    exceed 100 - that's a training-progress score, not a percentage.
+  </p>
+  {% if difficulty_chart_svg %}
+    {{ difficulty_chart_svg | safe }}
+  {% else %}
+    <p class="subtitle" style="margin: 0;">Log at least two static-hold sessions to see this chart.</p>
+  {% endif %}
+
+  {% if tier_breakdown %}
+    <p class="field-label" style="margin-top: 1.2rem;">Recent sessions by progression tier</p>
+    <div class="tier-breakdown">
+      {% set max_count = tier_breakdown|map(attribute='count')|max %}
+      {% for tier in tier_breakdown %}
+        <div class="tier-breakdown-row">
+          <span class="tier-breakdown-label">{{ tier.label }}</span>
+          <div class="tier-breakdown-bar-track">
+            <div class="tier-breakdown-bar" style="width: {{ (tier.count / max_count * 100) if max_count else 0 }}%"></div>
+          </div>
+          <span class="tier-breakdown-count">{{ tier.count }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Per-move&nbsp;progress</p>
+  {% if movement_options %}
+    <div class="movement-selector-row">
+      <span class="field-label" style="width: auto; margin: 0 0.6rem 0 0;">Movement</span>
+      <select class="movement-selector" onchange="location.href=this.value">
+        {% for m in movement_options %}
+          <option value="{{ url_for('main.history', **merge_query(movement=m.key)) }}" {{ 'selected' if m.key == selected_movement_key }}>
+            {{ m.label }} ({{ m.count }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% if movement_view %}
+      <div class="movement-pr-grid">
+        <div class="movement-pr">
+          <p class="movement-pr-value">
+            {% if not movement_view.best_primary_attempt %}&mdash;
+            {% elif movement_view.is_dynamic %}{{ movement_view.best_primary_attempt.rep_count }}<small> reps</small>
+            {% else %}{{ '%.1f'|format(movement_view.best_primary_attempt.duration_sec) }}<small>s</small>{% endif %}
+          </p>
+          <p class="movement-pr-label">Best {{ movement_view.primary_metric_label }}</p>
+          {% if movement_view.best_primary_attempt %}<p class="movement-pr-date">{{ movement_view.best_primary_attempt.uploaded_at.strftime('%b %-d, %Y') }}</p>{% endif %}
+        </div>
+        <div class="movement-pr">
+          <p class="movement-pr-value">{{ movement_view.best_score_attempt.overall_score if movement_view.best_score_attempt else '—' }}</p>
+          <p class="movement-pr-label">Best score</p>
+          {% if movement_view.best_score_attempt %}<p class="movement-pr-date">{{ movement_view.best_score_attempt.uploaded_at.strftime('%b %-d, %Y') }}</p>{% endif %}
+        </div>
+        <div class="movement-pr">
+          <p class="movement-pr-value">{{ movement_view.most_recent.overall_score if movement_view.most_recent.overall_score is not none else '—' }}</p>
+          <p class="movement-pr-label">Most recent</p>
+          <p class="movement-pr-date">{{ movement_view.most_recent.uploaded_at.strftime('%b %-d, %Y') }}</p>
+        </div>
+        <div class="movement-pr">
+          <p class="movement-pr-value">
+            <span class="trend-badge trend-badge-{{ movement_view.trend }}">
+              {% if movement_view.trend == 'improving' %}Improving
+              {% elif movement_view.trend == 'declining' %}Declining
+              {% elif movement_view.trend == 'plateauing' %}Plateauing
+              {% else %}Not enough data{% endif %}
+            </span>
+          </p>
+          <p class="movement-pr-label">Trend ({{ movement_view.attempt_count }} sessions)</p>
+        </div>
+      </div>
+
+      {% if movement_chart_svg %}
+        <div class="chart-legend">
+          <span class="chart-legend-item"><span class="chart-legend-swatch" style="background: var(--cyan)"></span>Score</span>
+          <span class="chart-legend-item"><span class="chart-legend-swatch" style="background: var(--accent)"></span>{{ movement_view.primary_metric_label|capitalize }}</span>
+        </div>
+        {{ movement_chart_svg | safe }}
+      {% else %}
+        <p class="subtitle" style="margin: 0.8rem 0 0;">Log at least two sessions of this move to see its chart.</p>
+      {% endif %}
+    {% endif %}
+  {% else %}
+    <p class="subtitle" style="margin: 0;">No single-move sessions yet (combos aren't tracked per-move) — log a static hold or rep set to see per-move progress here.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Session&nbsp;log</p>
+
+  <div class="table-controls">
+    <div class="filter-group">
+      <span class="field-label" style="width: auto; margin: 0 0.6rem 0 0;">Group</span>
+      {% for key, label in group_options %}
+        <a class="filter-chip {{ 'is-active' if group_by == key }}" href="{{ url_for('main.history', **merge_query(group=key)) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" action="{{ url_for('main.history') }}" class="score-range-form">
+      {% for k, v in request.args.items() %}
+        {% if k not in ['score_min', 'score_max'] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}
+      {% endfor %}
+      <label class="field-label" style="width: auto;">Score</label>
+      <input type="number" name="score_min" min="0" max="100" placeholder="min" value="{{ score_min if score_min is not none else '' }}">
+      <span>&ndash;</span>
+      <input type="number" name="score_max" min="0" max="100" placeholder="max" value="{{ score_max if score_max is not none else '' }}">
+      <button type="submit" class="btn btn-secondary">Apply</button>
+      {% if score_min is not none or score_max is not none %}
+        <a class="btn btn-secondary" href="{{ url_for('main.history', **merge_query(score_min=None, score_max=None)) }}">Clear</a>
+      {% endif %}
+    </form>
+    {% if movement_options %}
+      <select class="movement-selector" onchange="location.href=this.value">
+        <option value="{{ url_for('main.history', **merge_query(table_move=None)) }}" {{ 'selected' if table_move == 'all' }}>All moves</option>
+        {% for m in movement_options %}
+          <option value="{{ url_for('main.history', **merge_query(table_move=m.key)) }}" {{ 'selected' if table_move == m.key }}>{{ m.label }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+  </div>
+
+  <table class="history-table">
+    <thead>
+      <tr>
+        {% for key, label in sort_options %}
+          <th>
+            <a href="{{ url_for('main.history', **merge_query(sort=key, dir=('asc' if sort_key == key and sort_dir == 'desc' else 'desc'))) }}">
+              {{ label }}{% if sort_key == key %} {{ '&uarr;'|safe if sort_dir == 'asc' else '&darr;'|safe }}{% endif %}
+            </a>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for group in table_groups %}
+      {% if group.label %}
+        <tr class="history-group-row"><td colspan="5">{{ group.label }}</td></tr>
+      {% endif %}
+      {% for row in group.rows %}
+        {% set a = row.attempt %}
+        <tr>
+          <td>
+            <a href="{{ url_for('main.report', attempt_id=a.id) }}">{{ a.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</a>
+            {% if row.is_best_ever %}<span class="standout-badge standout-badge-best">Best ever</span>{% endif %}
+            {% if row.is_movement_pr and not row.is_best_ever %}<span class="standout-badge standout-badge-pr">PR</span>{% endif %}
+          </td>
+          <td>{% if a.hold_detected %}{{ a.move_label }}{% else %}&mdash;{% endif %}</td>
+          <td>
+            {% if a.is_dynamic and a.rep_count is not none %}
+              <span class="score-badge pill-{{ a.rom_consistency_score|score_tier }}">{{ a.rep_count }} reps</span>
+            {% elif a.overall_score is not none %}
+              <span class="score-badge pill-{{ a.overall_score|score_tier }}">{{ a.overall_score }}/100</span>
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td>{% if not a.is_dynamic and a.difficulty_adjusted_score is not none %}{{ a.difficulty_adjusted_score }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if a.duration_sec %}{{ '%.1f'|format(a.duration_sec) }}s{% else %}&mdash;{% endif %}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<div class="chart-tooltip" id="chart-tooltip" hidden></div>
+<script>
+  (function () {
+    const tooltip = document.getElementById('chart-tooltip');
+    if (!tooltip) return;
+    let pinned = false;
+
+    function show(el) {
+      tooltip.textContent = el.getAttribute('data-tooltip');
+      tooltip.hidden = false;
+      const rect = el.getBoundingClientRect();
+      tooltip.style.left = `${rect.left + window.scrollX + rect.width / 2}px`;
+      tooltip.style.top = `${rect.top + window.scrollY - 12}px`;
+    }
+
+    document.querySelectorAll('.chart-point').forEach((point) => {
+      point.addEventListener('mouseenter', () => { if (!pinned) show(point); });
+      point.addEventListener('focus', () => show(point));
+      point.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pinned = true;
+        show(point);
+      });
+    });
+
+    document.addEventListener('click', () => {
+      pinned = false;
+      tooltip.hidden = true;
+    });
+    document.addEventListener('mouseout', (e) => {
+      if (!pinned && e.target.classList && e.target.classList.contains('chart-point')) {
+        tooltip.hidden = true;
+      }
+    });
+  })();
+</script>
+{% endblock %}

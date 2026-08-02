@@ -1,0 +1,23 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+#
+# Deploys the HOLDFAST Flask app (backend/) as a single web service on
+# Render's free tier. Two things worth knowing about the free tier:
+#   1. The service spins down after 15 min idle - the next request wakes
+#      it back up (~30-50s cold start). Fine for personal/occasional use.
+#   2. Free tier has no persistent disk, so backend/data/ (the SQLite DB
+#      and uploaded videos) is wiped on every redeploy/restart. That's a
+#      real limitation for this app's current local-file storage design -
+#      fine for trying it out online, but anything you want to keep long
+#      term should eventually move to a real Postgres DB + S3/R2-style
+#      object storage instead of local disk.
+services:
+  - type: web
+    name: holdfast
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: ./build.sh
+    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0

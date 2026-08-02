@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Duels - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Online &middot; ranked</p>
+<h1 class="display">DUELS</h1>
+<p class="subtitle">
+  Head-to-head over a single move. Both sides submit a clip, the existing scoring pipeline
+  decides who was physically harder, and the winner gains rank.
+</p>
+
+<div class="duel-identity-strip">
+  <span class="rank-badge rank-badge-{{ tier.key }}"></span>
+  <div>
+    <p class="duel-identity-name">{{ account.display_name }}</p>
+    <p class="meta">{{ tier.label }} &middot; {{ account.rating }} rating{% if next_tier %} &middot; {{ next_tier.floor - account.rating }} to {{ next_tier.label }}{% endif %}</p>
+  </div>
+  <a class="nav-link" href="{{ url_for('duels.accounts') }}" style="margin-left:auto;">Switch identity</a>
+</div>
+
+<div class="duel-rank-ladder">
+  {% for t in rank_tiers %}
+  <div class="duel-rank-ladder-step {{ 'is-current' if t.key == tier.key }}">
+    <span class="rank-badge-mini rank-badge-{{ t.key }}"></span>
+    <span>{{ t.label }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="duel-stat-row">
+  <div class="stat-block">
+    <div class="stat-value">{{ total_wins }}</div>
+    <div class="stat-label">Wins</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-value">{{ total_losses }}</div>
+    <div class="stat-label">Losses</div>
+  </div>
+  <div class="stat-block">
+    <div class="stat-value">{{ total_draws }}</div>
+    <div class="stat-label">Draws</div>
+  </div>
+</div>
+
+<div class="duel-action-row">
+  <a class="btn btn-primary" href="{{ url_for('duels.new_duel') }}">Find opponent / start duel &rarr;</a>
+  <a class="btn btn-secondary" href="{{ url_for('duels.leaderboard') }}">Leaderboard</a>
+  <a class="btn btn-secondary" href="{{ url_for('duels.history') }}">Match history</a>
+</div>
+
+{% if active_duels %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Active&nbsp;/&nbsp;pending</p>
+  <ul class="duel-list">
+    {% for d in active_duels %}
+    <li>
+      <a class="duel-row" href="{{ url_for('duels.detail', duel_id=d.id) }}">
+        <span class="move">{{ d.move_label }}</span>
+        {% if d.status == 'queued' %}
+          <span class="tag tag-warning">waiting for opponent</span>
+        {% else %}
+          <span class="tag">vs {{ d.opponent_of(account.id).display_name }}</span>
+          <span class="tag tag-touch">awaiting clips</span>
+        {% endif %}
+        <span class="meta">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if recent_results %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Recent results</p>
+  <ul class="duel-list">
+    {% for d in recent_results %}
+    {% set opponent = d.opponent_of(account.id) %}
+    {% set outcome = 'draw' if d.is_draw else ('win' if d.winner_id == account.id else 'loss') %}
+    <li>
+      <a class="duel-row" href="{{ url_for('duels.detail', duel_id=d.id) }}">
+        <span class="duel-outcome duel-outcome-{{ outcome }}">{{ outcome|upper }}</span>
+        <span class="move">{{ d.move_label }}</span>
+        <span class="tag">vs {{ opponent.display_name if opponent else 'unknown' }}</span>
+        <span class="meta">{{ d.scored_at.strftime('%Y-%m-%d %H:%M') if d.scored_at }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% else %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Recent results</p>
+  <p class="subtitle" style="margin:0;">No duels scored yet - start one above.</p>
+</section>
+{% endif %}
+{% endblock %}

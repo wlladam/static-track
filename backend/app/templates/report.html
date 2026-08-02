@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Attempt #{{ attempt.id }} - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Session #{{ attempt.id }}</p>
+<h1 class="display">SESSION&nbsp;REPORT</h1>
+<p class="meta">{{ attempt.original_filename }} &middot; uploaded {{ attempt.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</p>
+
+<div style="height: 1.5rem"></div>
+
+{% if attempt.error %}
+  <p class="banner banner-error">Something went wrong analyzing this video: {{ attempt.error }}</p>
+{% elif not attempt.hold_detected %}
+  <p class="banner banner-warning">
+    No confident hold was detected in this video. Try a clip where the hold is clearly
+    visible, the camera doesn't move, and the athlete stays roughly horizontal throughout.
+  </p>
+{% elif attempt.is_combo %}
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Combo&nbsp;overview</p>
+    <div class="hold-headline">
+      <span class="move-badge">{{ attempt.move_label }}</span>
+    </div>
+    <p class="feedback-summary" style="margin-top: 1rem;">{{ attempt.report.summary }}</p>
+  </section>
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Moves&nbsp;in&nbsp;order</p>
+    <ol class="combo-move-list">
+      {% for m in attempt.combo_moves %}
+      <li class="combo-move">
+        <div class="combo-move-head">
+          <span class="combo-move-index">{{ m.index }}</span>
+          <span class="move-badge">{{ (m.progression or 'unknown')|replace('_', ' ') }} {{ (m.move_type or 'move')|replace('_', ' ') }}</span>
+          <span class="tag {{ 'tag-touch' if m.kind == 'touch' else '' }}">{{ m.kind }}</span>
+          <span class="combo-move-timing">{{ '%.2f'|format(m.start_sec) }}s&ndash;{{ '%.2f'|format(m.end_sec) }}s ({{ '%.2f'|format(m.duration_sec) }}s)</span>
+          {% if m.score is not none %}
+            <span class="score-badge pill-{{ m.score|score_tier }}">{{ m.score }}/100</span>
+          {% endif %}
+        </div>
+        <p class="combo-move-critique">{{ m.critique }}</p>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Field&nbsp;note</p>
+    <p class="annotation">
+      Combo detection (multiple holds/touches in one clip, including brief touch holds) is newer and
+      less battle-tested than the single-hold path - move boundaries should be treated as a solid
+      first pass, especially for fast transitions or very brief touches.
+    </p>
+  </section>
+
+  {% if attempt.debug_overlay_path %}
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Skeleton&nbsp;overlay</p>
+    <div class="video-frame">
+      <video controls src="{{ url_for('main.overlay_video', attempt_id=attempt.id) }}"></video>
+    </div>
+  </section>
+  {% endif %}
+{% elif attempt.is_dynamic %}
+  {% set feedback = attempt.report %}
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Exercise&nbsp;identification</p>
+    <div class="hold-headline">
+      <span class="move-badge">{{ attempt.move_label }}</span>
+    </div>
+    <div class="duration-row">
+      <div class="stat-block">
+        <div class="stat-value">{{ attempt.rep_count }}</div>
+        <div class="stat-label">Reps</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">{{ '%.2f'|format(attempt.avg_rep_duration_sec) }}s</div>
+        <div class="stat-label">Avg rep duration</div>
+      </div>
+      <div class="stat-block">
+        {% if attempt.overall_score is not none %}
+          <div class="stat-value" data-tier="{{ attempt.overall_score|score_tier }}">{{ attempt.overall_score }}<small>/100</small></div>
+        {% else %}
+          <div class="stat-value stat-value-muted">&mdash;</div>
+        {% endif %}
+        <div class="stat-label">Form score</div>
+      </div>
+    </div>
+    {% if attempt.overall_confidence and attempt.overall_confidence != 'high' %}
+      <p class="confidence-note {{ attempt.overall_confidence }}">&#9888; {{ attempt.overall_confidence }} confidence overall</p>
+    {% endif %}
+  </section>
+
+  {% if feedback %}{% include "_feedback.html" %}{% endif %}
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Per-rep&nbsp;breakdown</p>
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Rep</th><th>Timing</th><th>ROM</th><th>Progression</th>
+          <th>Arm lockout</th><th>Hip/shoulder</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in attempt.reps %}
+        <tr>
+          <td>{{ r.index }}</td>
+          <td>{{ r.start_sec }}s&ndash;{{ r.end_sec }}s</td>
+          <td>{{ r.rom }}</td>
+          <td>{{ (r.progression or '&mdash;')|replace('_', ' ') }}</td>
+          <td>
+            {% if r.arm_lockout_score is not none %}
+              <span class="score-badge pill-{{ r.arm_lockout_score|score_tier }}">{{ r.arm_lockout_score }}</span>
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td>
+            {% if r.hip_shoulder_score is not none %}
+              <span class="score-badge pill-{{ r.hip_shoulder_score|score_tier }}">{{ r.hip_shoulder_score }}</span>
+            {% else %}&mdash;{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if attempt.rep_count == 1 %}
+      <p class="annotation" style="margin-top: 1rem;">
+        Only one rep was detected, so rep-to-rep consistency couldn't be measured - upload a clip with
+        a full set to see how consistent your reps are alongside the form breakdown above.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Field&nbsp;note</p>
+    <p class="annotation">
+      Dynamic rep detection (pull-ups, raises, push-ups) is newer and less battle-tested than the
+      static-hold path - rep boundaries and per-rep windows should be treated as a solid first pass
+      rather than final word, especially on shorter or noisier clips.
+    </p>
+  </section>
+
+  {% if attempt.debug_overlay_path %}
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Skeleton&nbsp;overlay</p>
+    <div class="video-frame">
+      <video controls src="{{ url_for('main.overlay_video', attempt_id=attempt.id) }}"></video>
+    </div>
+  </section>
+  {% endif %}
+{% else %}
+  {% set report = attempt.report %}
+  {% set feedback = report %}
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Hold&nbsp;identification</p>
+    <div class="hold-headline">
+      <span class="move-badge">{{ attempt.move_type.replace('_', ' ') }}</span>
+      <span class="progression-chip">{{ attempt.progression.replace('_', ' ') }}</span>
+    </div>
+    <div class="duration-row">
+      <div class="stat-block">
+        <div class="stat-value">{{ '%.2f'|format(attempt.duration_sec) }}s</div>
+        <div class="stat-label">Duration</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">{{ '%.2f'|format(attempt.start_sec) }}s</div>
+        <div class="stat-label">Start</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-value">{{ '%.2f'|format(attempt.end_sec) }}s</div>
+        <div class="stat-label">End</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Overall&nbsp;score</p>
+    <div class="score-hero">
+      <div class="gauge" data-tier="{{ attempt.overall_score|score_tier }}" style="--pct: {{ attempt.overall_score }};">
+        <div class="gauge-value">{{ attempt.overall_score }}<small>/ 100</small></div>
+      </div>
+      <div class="score-hero-meta">
+        <p class="subtitle" style="margin:0;">
+          Aggregated from arm lockout, hip-shoulder alignment, and hold stability.
+          Low-confidence measurements (badly-tracked joints) count for less toward this number.
+        </p>
+        {% if attempt.overall_confidence != 'high' %}
+          <p class="confidence-note {{ attempt.overall_confidence }}">&#9888; {{ attempt.overall_confidence }} confidence overall</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Criteria&nbsp;breakdown</p>
+    <div class="criteria-grid">
+      {% for name, c in report.criteria.items() %}
+        <div class="criterion-card">
+          <div class="criterion-head">
+            <span class="criterion-name">{{ name.replace('_', ' ')|capitalize }}</span>
+            <span class="criterion-score" data-tier="{{ c.score|score_tier }}">{{ c.score }}</span>
+          </div>
+          <div class="meter"><div class="meter-fill" data-tier="{{ c.score|score_tier }}" style="width: {{ c.score }}%;"></div></div>
+          <p class="criterion-label">{{ c.label }}</p>
+          {% if c.confidence == 'low' %}<span class="badge-low-confidence">Low confidence</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% include "_feedback.html" %}
+
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Field&nbsp;note</p>
+    <p class="annotation">{{ report.scapular_position_note }}</p>
+  </section>
+
+  {% if attempt.debug_overlay_path %}
+  <section class="panel">
+    <p class="panel-title"><span class="dot"></span>Skeleton&nbsp;overlay</p>
+    <div class="video-frame">
+      <video controls src="{{ url_for('main.overlay_video', attempt_id=attempt.id) }}"></video>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if report.features %}
+  <details class="console">
+    <summary>Raw joint-angle features</summary>
+    <div class="console-body">
+      {% for k, v in report.features.items() %}
+        <span class="k">{{ k }}</span><span>{{ v }}</span>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+{% endif %}
+{% endblock %}

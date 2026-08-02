@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Duel - {{ duel.move_label }} - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Duel #{{ duel.id }}</p>
+<h1 class="display">{{ duel.move_label|upper }}</h1>
+
+{% if duel.status == 'queued' %}
+  <section class="panel duel-waiting-panel">
+    <span class="spinner"></span>
+    <div>
+      <p class="processing-title">Waiting for an opponent&hellip;</p>
+      <p class="processing-subtitle">
+        No other athlete is currently queued for {{ duel.move_label }}. You can keep waiting
+        (refresh this page later - a human may queue up for the same move), or duel a bot now.
+      </p>
+    </div>
+  </section>
+  <div class="duel-action-row">
+    <form action="{{ url_for('duels.match_bot', duel_id=duel.id) }}" method="post">
+      <button type="submit" class="btn btn-primary">Duel a bot instead &rarr;</button>
+    </form>
+    <form action="{{ url_for('duels.abandon', duel_id=duel.id) }}" method="post">
+      <button type="submit" class="btn btn-secondary">Abandon duel</button>
+    </form>
+  </div>
+
+{% elif duel.status == 'awaiting_submissions' %}
+  <p class="subtitle">vs <strong>{{ opponent_account.display_name }}</strong> ({{ opponent_account.tier.label }} &middot; {{ opponent_account.rating }} rating)</p>
+
+  <div class="duel-columns">
+    <section class="panel duel-side-panel">
+      <p class="panel-title"><span class="dot"></span>You &mdash; {{ account.display_name }}</p>
+      {% if my_attempt %}
+        <p class="tag tag-touch">Clip submitted</p>
+        <p class="subtitle" style="margin:0;">Waiting on {{ opponent_account.display_name }}'s clip to score the duel.</p>
+      {% else %}
+        <form action="{{ url_for('duels.submit_clip', duel_id=duel.id) }}" method="post" enctype="multipart/form-data" class="upload-card" style="margin:0;">
+          <div class="file-row">
+            <label class="file-label" id="duel-file-label" for="duel-video-input">Choose video file&hellip;</label>
+            <input type="file" name="video" id="duel-video-input" accept="video/*" required>
+            <button type="submit" class="btn btn-primary" id="duel-submit-btn">Submit clip &rarr;</button>
+          </div>
+          <div class="processing-row" id="duel-processing-row" hidden>
+            <span class="spinner"></span>
+            <div>
+              <p class="processing-title">Analyzing your clip&hellip;</p>
+              <p class="processing-subtitle">This can take up to a minute. Don't close this tab.</p>
+            </div>
+          </div>
+        </form>
+      {% endif %}
+    </section>
+
+    <section class="panel duel-side-panel">
+      <p class="panel-title"><span class="dot"></span>Opponent &mdash; {{ opponent_account.display_name }}</p>
+      {% if opponent_attempt %}
+        <p class="tag tag-touch">Clip submitted</p>
+      {% else %}
+        <p class="tag tag-warning">Waiting on their clip{{ ' (bot)' if opponent_account.is_bot }}</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <script>
+    var form = document.querySelector('.duel-side-panel form');
+    if (form) {
+      var input = document.getElementById('duel-video-input');
+      var label = document.getElementById('duel-file-label');
+      input.addEventListener('change', function () {
+        if (input.files.length) {
+          label.textContent = input.files[0].name;
+          label.classList.add('has-file');
+        }
+      });
+      form.addEventListener('submit', function () {
+        if (!input.files.length) return;
+        document.querySelector('.duel-side-panel .file-row').hidden = true;
+        document.getElementById('duel-processing-row').hidden = false;
+      });
+    }
+  </script>
+
+{% else %}
+  {# scored #}
+  <div class="duel-result-banner duel-result-{{ outcome }}">
+    {% if outcome == 'draw' %}It's a draw
+    {% elif outcome == 'win' %}You won this duel
+    {% else %}You lost this duel{% endif %}
+  </div>
+
+  <div class="duel-columns">
+    <section class="panel duel-side-panel {{ 'is-winner' if duel.winner_id == account.id }}">
+      <p class="panel-title"><span class="dot"></span>You &mdash; {{ account.display_name }}</p>
+      {% if duel.winner_id == account.id %}<span class="tag tag-touch">Winner</span>{% endif %}
+      <div class="stat-block">
+        <div class="stat-value" data-tier="{{ my_attempt.overall_score|score_tier }}">{{ my_attempt.overall_score }}<small>/100</small></div>
+        <div class="stat-label">Form score</div>
+      </div>
+      <p class="meta">Difficulty-adjusted: {{ my_attempt.difficulty_adjusted_score }} &middot; held {{ '%.1f'|format(my_attempt.duration_sec) }}s</p>
+      <p class="feedback-summary">{{ my_attempt.report.summary }}</p>
+      <p class="meta">Rating: {{ my_rating_before }} &rarr; {{ my_rating_after }}
+        <span class="{{ 'duel-rating-up' if my_rating_after >= my_rating_before else 'duel-rating-down' }}">
+          ({{ '+' if my_rating_after >= my_rating_before }}{{ my_rating_after - my_rating_before }})
+        </span>
+      </p>
+      <a class="btn btn-secondary" href="{{ url_for('main.report', attempt_id=my_attempt.id) }}">Full report</a>
+    </section>
+
+    <section class="panel duel-side-panel {{ 'is-winner' if duel.winner_id == opponent_account.id }}">
+      <p class="panel-title"><span class="dot"></span>Opponent &mdash; {{ opponent_account.display_name }}</p>
+      {% if duel.winner_id == opponent_account.id %}<span class="tag tag-touch">Winner</span>{% endif %}
+      <div class="stat-block">
+        <div class="stat-value" data-tier="{{ opponent_attempt.overall_score|score_tier }}">{{ opponent_attempt.overall_score }}<small>/100</small></div>
+        <div class="stat-label">Form score</div>
+      </div>
+      <p class="meta">Difficulty-adjusted: {{ opponent_attempt.difficulty_adjusted_score }} &middot; held {{ '%.1f'|format(opponent_attempt.duration_sec) }}s</p>
+      <p class="feedback-summary">{{ opponent_attempt.report.summary }}</p>
+      <p class="meta">Rating: {{ opp_rating_before }} &rarr; {{ opp_rating_after }}
+        <span class="{{ 'duel-rating-up' if opp_rating_after >= opp_rating_before else 'duel-rating-down' }}">
+          ({{ '+' if opp_rating_after >= opp_rating_before }}{{ opp_rating_after - opp_rating_before }})
+        </span>
+      </p>
+      {% if not opponent_account.is_bot %}
+        <a class="btn btn-secondary" href="{{ url_for('main.report', attempt_id=opponent_attempt.id) }}">Full report</a>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="duel-action-row">
+    <a class="btn btn-primary" href="{{ url_for('duels.new_duel') }}">Duel again &rarr;</a>
+    <a class="btn btn-secondary" href="{{ url_for('duels.dashboard') }}">Back to dashboard</a>
+  </div>
+{% endif %}
+{% endblock %}

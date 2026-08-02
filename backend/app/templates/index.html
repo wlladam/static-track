@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Upload - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Session intake</p>
+<h1 class="display">ANALYZE&nbsp;A&nbsp;HOLD</h1>
+<p class="subtitle">Upload a front lever, planche, or progression clip. Pose is
+extracted, the hold is timed and classified, and form is scored automatically.</p>
+
+<form action="{{ url_for('main.upload') }}" method="post" enctype="multipart/form-data" class="upload-card" id="upload-form">
+  <div class="movement-type-row" id="movement-type-row">
+    <p class="field-label">What kind of movement is this?</p>
+    <label class="radio-chip">
+      <input type="radio" name="movement_type" value="static_hold" required>
+      Static hold <span class="radio-chip-hint">(front lever, planche, tuck &mdash; held still)</span>
+    </label>
+    <label class="radio-chip">
+      <input type="radio" name="movement_type" value="dynamic_reps" required>
+      Dynamic reps <span class="radio-chip-hint">(pull-ups, raises, push-ups &mdash; repeated motion)</span>
+    </label>
+    <label class="radio-chip">
+      <input type="radio" name="movement_type" value="combo" required>
+      Combo <span class="radio-chip-hint">(several holds/touches in one clip, e.g. tuck &rarr; straddle &rarr; full)</span>
+    </label>
+  </div>
+  <div class="movement-type-row" id="progression-row">
+    <p class="field-label">Progression (optional &mdash; leave on auto-detect if unsure)</p>
+    <select name="progression" class="progression-select">
+      <option value="">Auto-detect</option>
+      <option value="tuck">Tuck</option>
+      <option value="advanced_tuck">Advanced tuck</option>
+      <option value="straddle">Straddle</option>
+      <option value="full">Full</option>
+      <option value="one_arm">One-arm</option>
+    </select>
+    <span class="radio-chip-hint">
+      Straddle vs. full can't be reliably told apart from a side-view camera &mdash; pick it here if you know it.
+      For a combo, this applies to every move in the clip, so only set it if all your moves share the
+      same progression.
+    </span>
+  </div>
+  <div class="file-row" id="file-row">
+    <label class="file-label" id="file-label" for="video-input">Choose video file&hellip;</label>
+    <input type="file" name="video" id="video-input" accept="video/*" required>
+    <button type="submit" class="btn btn-primary" id="submit-btn">Run analysis &rarr;</button>
+  </div>
+  <div class="processing-row" id="processing-row" hidden>
+    <span class="spinner"></span>
+    <div>
+      <p class="processing-title">Analyzing your video&hellip;</p>
+      <p class="processing-subtitle">Pose extraction runs frame-by-frame, so this can take up to a minute for longer clips. Don't close this tab.</p>
+    </div>
+  </div>
+</form>
+
+{% if recent %}
+<p class="eyebrow">Recent sessions</p>
+<ul class="attempt-list">
+  {% for a in recent %}
+  <li>
+    <a class="attempt-row" href="{{ url_for('main.report', attempt_id=a.id) }}">
+      <span class="date">{{ a.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      {% if a.error %}
+        <span class="move">{{ a.original_filename }}</span>
+        <span class="tag tag-error">error</span>
+      {% elif a.is_combo %}
+        <span class="move">{{ a.move_label }}</span>
+        <span class="tag">{{ a.combo_moves|length }} moves</span>
+      {% elif a.is_dynamic %}
+        <span class="move">{{ a.move_label }}</span>
+        <span class="score-pill pill-{{ a.rom_consistency_score|score_tier }}">{{ a.rep_count }} reps</span>
+      {% elif a.hold_detected %}
+        <span class="move">{{ a.move_label }}</span>
+        <span class="score-pill pill-{{ a.overall_score|score_tier }}">{{ a.overall_score }}/100</span>
+      {% else %}
+        <span class="move">{{ a.original_filename }}</span>
+        <span class="tag tag-warning">no hold detected</span>
+      {% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<script>
+  const input = document.getElementById('video-input');
+  const label = document.getElementById('file-label');
+  input.addEventListener('change', () => {
+    if (input.files.length) {
+      label.textContent = input.files[0].name;
+      label.classList.add('has-file');
+    }
+  });
+
+  const form = document.getElementById('upload-form');
+  form.addEventListener('submit', (event) => {
+    if (!input.files.length) return; // let the browser's own "required" validation handle it
+    document.getElementById('file-row').hidden = true;
+    document.getElementById('processing-row').hidden = false;
+  });
+</script>
+{% endblock %}

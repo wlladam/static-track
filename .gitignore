@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+backend/data/raw_videos/*
+!backend/data/raw_videos/.gitkeep
+backend/data/pose_output/*
+!backend/data/pose_output/.gitkeep
+backend/data/debug_overlays/*
+!backend/data/debug_overlays/.gitkeep
+backend/data/hold_summaries/*
+!backend/data/hold_summaries/.gitkeep
+
+backend/data/app.db
+
+backend/models/*.task
+
+.DS_Store
+
+# Claude Code local config/plugins - not part of the app
+.claude/

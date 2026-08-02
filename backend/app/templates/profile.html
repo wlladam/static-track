@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Athlete Profile - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Warrior&nbsp;Profile</p>
+<h1 class="display">ATHLETE&nbsp;PROFILE</h1>
+<p class="subtitle">Your stats, your skill trees, your earned badges - tracked separately from your analyzed sessions.</p>
+
+<div style="height: 1.5rem"></div>
+
+<section class="showcase-hero">
+  {% if athlete.has_showcase %}
+    <div class="showcase-hero-video">
+      <video controls preload="metadata" class="video-frame" src="{{ url_for('profile.showcase_video') }}"></video>
+    </div>
+    <div class="showcase-hero-meta">
+      <p class="panel-title"><span class="dot"></span>Best&nbsp;combo</p>
+      {% if athlete.showcase_caption %}<p class="showcase-caption">{{ athlete.showcase_caption }}</p>{% endif %}
+      <div class="showcase-hero-actions">
+        <details class="showcase-replace">
+          <summary class="btn btn-secondary">Replace clip</summary>
+          <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
+            <label class="file-label" for="showcase-video-replace">Choose video file&hellip;</label>
+            <input type="file" name="video" id="showcase-video-replace" accept=".mp4,.mov,.m4v,.avi" required>
+            <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)" value="{{ athlete.showcase_caption or '' }}">
+            <button type="submit" class="btn btn-primary">Upload</button>
+          </form>
+        </details>
+        <form action="{{ url_for('profile.showcase_delete') }}" method="post">
+          <button type="submit" class="btn btn-secondary">Delete</button>
+        </form>
+      </div>
+    </div>
+  {% else %}
+    <div class="showcase-hero-empty">
+      <p class="showcase-empty-title">Show off your best combo</p>
+      <p class="subtitle" style="margin: 0 0 1rem;">Upload a clip of your best move - a transition, a combo, whatever you're proudest of.</p>
+      <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
+        <label class="file-label" for="showcase-video-new">Choose video file&hellip;</label>
+        <input type="file" name="video" id="showcase-video-new" accept=".mp4,.mov,.m4v,.avi" required>
+        <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)">
+        <button type="submit" class="btn btn-primary">Upload clip</button>
+      </form>
+    </div>
+  {% endif %}
+</section>
+
+<div style="height: 1.5rem"></div>
+
+<section class="profile-card">
+  <div class="profile-card-identity">
+    <div class="profile-avatar">{{ (athlete.name or "?")[0]|upper }}</div>
+    <div>
+      <p class="profile-name">{{ athlete.name or "Unnamed Athlete" }}</p>
+      <span class="tier-chip tier-chip-{{ (athlete.experience_level or 'beginner')|lower }}">{{ athlete.experience_level or "Unranked" }}</span>
+    </div>
+    <div class="profile-badge-tally">
+      <div class="tally-block">
+        <div class="tally-value">{{ unlocked_skill_badges }}<small>/{{ total_skill_badges }}</small></div>
+        <div class="tally-label">Skill badges</div>
+      </div>
+      <div class="tally-block">
+        <div class="tally-value">{{ unlocked_combo_badges }}<small>/{{ total_combo_badges }}</small></div>
+        <div class="tally-label">Elite badges</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="profile-stat-grid">
+    <div class="profile-stat"><span class="profile-stat-label">Age</span><span class="profile-stat-value">{{ athlete.age or "—" }}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Weight</span><span class="profile-stat-value">{{ athlete.weight_kg or "—" }}{% if athlete.weight_kg %}<small> kg</small>{% endif %}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Height</span><span class="profile-stat-value">{{ athlete.height_cm or "—" }}{% if athlete.height_cm %}<small> cm</small>{% endif %}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Training freq.</span><span class="profile-stat-value">{{ athlete.training_frequency_days or "—" }}{% if athlete.training_frequency_days %}<small> d/wk</small>{% endif %}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Years training</span><span class="profile-stat-value">{{ athlete.years_training or "—" }}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Primary goal</span><span class="profile-stat-value profile-stat-value-text">{{ athlete.primary_goal or "—" }}</span></div>
+    <div class="profile-stat"><span class="profile-stat-label">Best training time</span><span class="profile-stat-value profile-stat-value-text">{{ athlete.preferred_training_time or "—" }}</span></div>
+  </div>
+
+  <details class="profile-edit">
+    <summary>Edit profile</summary>
+    <form action="{{ url_for('profile.update') }}" method="post" class="profile-edit-form">
+      <label>Name<input type="text" name="name" value="{{ athlete.name or '' }}" maxlength="60"></label>
+      <label>Age<input type="number" name="age" value="{{ athlete.age or '' }}" min="1" max="120"></label>
+      <label>Weight (kg)<input type="number" step="0.1" name="weight_kg" value="{{ athlete.weight_kg or '' }}" min="1"></label>
+      <label>Height (cm)<input type="number" step="0.1" name="height_cm" value="{{ athlete.height_cm or '' }}" min="1"></label>
+      <label>Experience level
+        <select name="experience_level">
+          <option value="">—</option>
+          {% for lvl in experience_levels %}
+            <option value="{{ lvl }}" {{ "selected" if athlete.experience_level == lvl }}>{{ lvl }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Training frequency (days/wk)<input type="number" name="training_frequency_days" value="{{ athlete.training_frequency_days or '' }}" min="0" max="7"></label>
+      <label>Years training<input type="number" step="0.5" name="years_training" value="{{ athlete.years_training or '' }}" min="0"></label>
+      <label>Primary goal
+        <select name="primary_goal">
+          <option value="">—</option>
+          {% for goal in primary_goals %}
+            <option value="{{ goal }}" {{ "selected" if athlete.primary_goal == goal }}>{{ goal }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Best training time
+        <select name="preferred_training_time">
+          <option value="">—</option>
+          {% for t in training_times %}
+            <option value="{{ t }}" {{ "selected" if athlete.preferred_training_time == t }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">Save profile</button>
+    </form>
+  </details>
+</section>
+
+{% for tree in trees %}
+<section class="panel skill-tree-panel">
+  <p class="panel-title"><span class="dot"></span>{{ tree.label }}&nbsp;skill&nbsp;tree</p>
+  <div class="skill-tree">
+    {% for node in tree.nodes %}
+      {% if not loop.first %}<div class="skill-tree-connector {{ 'is-unlocked' if node.status == 'unlocked' or tree.nodes[loop.index0 - 1].status == 'unlocked' }}"></div>{% endif %}
+      <div class="skill-node skill-node-{{ node.status }}">
+        <form action="{{ url_for('profile.toggle_skill', tree=tree.key, progression_key=node.key) }}" method="post">
+          <button type="submit" class="skill-badge skill-badge-{{ node.tier }} skill-badge-{{ node.status }}" title="{{ 'Unlocked ' + node.date_achieved.strftime('%Y-%m-%d') if node.date_achieved else 'Click to mark as achieved' }}">
+            <span class="skill-badge-icon">{{ tree.icon }}</span>
+          </button>
+        </form>
+        <p class="skill-node-label">{{ node.label }}</p>
+        {% if node.status == "unlocked" %}
+          <p class="skill-node-date">{{ node.date_achieved.strftime('%b %-d, %Y') if node.date_achieved else '' }}</p>
+        {% elif node.status == "in-progress" %}
+          <p class="skill-node-status">In progress</p>
+        {% else %}
+          <p class="skill-node-status">Locked</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+{% for family in badge_families %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>{{ family.label }}</p>
+  <p class="subtitle" style="margin: 0 0 1.3rem;">Dynamic strength beyond the static hold - logged reps unlock these automatically.</p>
+  <div class="combo-badge-grid">
+    {% for badge in family.badges %}
+    <div class="combo-badge-card {{ 'is-unlocked' if badge.unlocked }}">
+      <div class="combo-badge-shape combo-badge-shape-{{ badge.tier }}">
+        <span class="combo-badge-icon">{{ badge.icon }}</span>
+      </div>
+      <p class="combo-badge-label">{{ badge.label }}</p>
+      <p class="combo-badge-description">{{ badge.description }}</p>
+      {% if badge.rep_pr %}
+        <p class="combo-badge-pr">PR: <strong>{{ badge.rep_pr }}</strong> {{ badge.pr_unit }}</p>
+      {% endif %}
+      {% if badge.unlocked %}
+        <p class="combo-badge-date">Unlocked {{ badge.date_achieved.strftime('%b %-d, %Y') if badge.date_achieved else '' }}</p>
+      {% endif %}
+      <form action="{{ url_for('profile.log_pr', badge_key=badge.key) }}" method="post" class="combo-badge-pr-form">
+        <input type="number" name="rep_pr" min="1" placeholder="Log rep PR" value="{{ badge.rep_pr or '' }}">
+        <button type="submit" class="btn btn-primary">Log</button>
+      </form>
+      <form action="{{ url_for('profile.toggle_badge', badge_key=badge.key) }}" method="post">
+        <button type="submit" class="combo-badge-toggle">{{ "Lock badge" if badge.unlocked else "Mark unlocked" }}</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<script>
+  document.querySelectorAll('.showcase-upload-form input[type="file"]').forEach((input) => {
+    const label = input.previousElementSibling;
+    input.addEventListener('change', () => {
+      if (input.files.length) {
+        label.textContent = input.files[0].name;
+        label.classList.add('has-file');
+      }
+    });
+  });
+</script>
+{% endblock %}

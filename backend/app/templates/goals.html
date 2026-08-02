@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Goals - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Train&nbsp;toward&nbsp;something</p>
+<h1 class="display">GOALS</h1>
+<p class="subtitle">Set a target, put a date on it, watch it close. This is where you plan forward, not just log what already happened.</p>
+
+<div style="height: 1.5rem"></div>
+
+{% if not active_goals and not upcoming_events and not completed_goals and not past_events %}
+<section class="panel goals-empty-state">
+  <p class="goals-empty-title">No goals or events yet</p>
+  <p class="subtitle" style="margin: 0 0 1.4rem;">Pick a move you're chasing, or add a date you're training toward - either one is a fine place to start.</p>
+  <div class="goals-empty-actions">
+    <a class="btn btn-primary" href="#new-goal">Set a goal</a>
+    <a class="btn btn-secondary" href="#new-event">Add an event</a>
+  </div>
+</section>
+{% endif %}
+
+<section class="goals-hero-grid">
+  <div class="panel goals-hero-card">
+    <p class="panel-title"><span class="dot"></span>Nearest&nbsp;event</p>
+    {% if nearest_event %}
+      <p class="countdown-number">{{ nearest_event.days_away }}<small>{{ ' day' if nearest_event.days_away == 1 else ' days' }}</small></p>
+      <p class="countdown-event-name">to {{ nearest_event.name }}</p>
+      <p class="countdown-event-date">{{ nearest_event.event_date.strftime('%B %-d, %Y') }}{% if nearest_event.location %} &middot; {{ nearest_event.location }}{% endif %}</p>
+      {% if nearest_event.linked_goals %}
+        <div class="countdown-linked-goals">
+          {% for g in nearest_event.linked_goals %}
+            <span class="linked-goal-chip {{ 'is-unlocked' if g.is_unlocked }}">{{ g.icon }} {{ g.target_label }}{% if g.is_unlocked %} &check;{% endif %}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="subtitle" style="margin: 0.4rem 0 0;">No upcoming events yet. <a href="#new-event">Add one</a> to get a countdown here.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel goals-hero-card">
+    <p class="panel-title"><span class="dot"></span>Primary&nbsp;goal</p>
+    {% if primary_goal %}
+      {% set g = primary_goal %}
+      <p class="primary-goal-label">{{ g.icon }} {{ g.target_label }}</p>
+      {% if g.kind == 'skill' %}
+        <div class="goal-progress-track">
+          <div class="goal-progress-fill" style="width: {{ (g.current_index + 1) / g.total_tiers * 100 }}%"></div>
+        </div>
+        <p class="goal-progress-note">
+          {% if g.tiers_away == 0 %}Unlocked!{% else %}{{ g.tiers_away }} tier{{ 's' if g.tiers_away != 1 }} away from {{ g.target_label }}{% endif %}
+        </p>
+        {% if g.closest_attempt %}
+          <p class="goal-progress-detail">Best on {{ g.closest_attempt.progression_label }}: {% if g.closest_attempt.best_score is not none %}{{ g.closest_attempt.best_score }}/100{% endif %}{% if g.closest_attempt.best_duration %} &middot; {{ '%.1f'|format(g.closest_attempt.best_duration) }}s held{% endif %}</p>
+        {% endif %}
+      {% else %}
+        <p class="goal-progress-note">{% if g.rep_pr %}Current PR: {{ g.rep_pr }} {{ g.pr_unit }}{% else %}No PR logged yet{% endif %}</p>
+      {% endif %}
+      {% if g.target_date %}<p class="goal-progress-detail">Target date: {{ g.target_date.strftime('%B %-d, %Y') }}</p>{% endif %}
+      {% if g.note %}<p class="goal-note">&ldquo;{{ g.note }}&rdquo;</p>{% endif %}
+    {% else %}
+      <p class="subtitle" style="margin: 0.4rem 0 0;">
+        {% if active_goals %}Mark one of your active goals as primary to feature it here.{% else %}<a href="#new-goal">Set a goal</a> and mark it primary to feature it here.{% endif %}
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Active&nbsp;skill&nbsp;goals</p>
+  {% if active_goals %}
+    <div class="goal-card-grid">
+      {% for g in active_goals %}
+        <div class="goal-card {{ 'is-primary' if g.is_primary }}">
+          {% if g.is_primary %}<span class="goal-primary-badge">Primary</span>{% endif %}
+          <p class="goal-card-icon">{{ g.icon }}</p>
+          <p class="goal-card-label">{{ g.target_label }}</p>
+          {% if g.kind == 'skill' %}
+            <p class="goal-card-sub">{{ g.tree_label }} skill tree</p>
+            <div class="goal-progress-track">
+              <div class="goal-progress-fill" style="width: {{ (g.current_index + 1) / g.total_tiers * 100 }}%"></div>
+            </div>
+            <p class="goal-progress-note">{% if g.tiers_away == 0 %}Unlocked!{% else %}{{ g.tiers_away }} tier{{ 's' if g.tiers_away != 1 }} away{% endif %}</p>
+            {% if g.closest_attempt %}
+              <p class="goal-progress-detail">
+                Best on {{ g.closest_attempt.progression_label }}:
+                {% if g.closest_attempt.best_score is not none %}{{ g.closest_attempt.best_score }}/100{% endif %}
+                {% if g.closest_attempt.best_duration %} &middot; {{ '%.1f'|format(g.closest_attempt.best_duration) }}s{% endif %}
+              </p>
+            {% endif %}
+          {% else %}
+            <p class="goal-card-sub">{{ g.family|capitalize }} combo &middot; {{ g.tier|capitalize }} tier</p>
+            <p class="goal-progress-note">{% if g.rep_pr %}Current PR: {{ g.rep_pr }} {{ g.pr_unit }}{% else %}No PR logged yet{% endif %}</p>
+          {% endif %}
+          {% if g.target_date %}<p class="goal-progress-detail">Target: {{ g.target_date.strftime('%b %-d, %Y') }}</p>{% endif %}
+
+          <details class="goal-note-editor">
+            <summary>{{ g.note or 'Add a note' }}</summary>
+            <form action="{{ url_for('goals.update_note', goal_id=g.id) }}" method="post">
+              <textarea name="note" maxlength="240" placeholder="e.g. focus on hip compression before progressing">{{ g.note or '' }}</textarea>
+              <button type="submit" class="btn btn-secondary">Save note</button>
+            </form>
+          </details>
+
+          <div class="goal-card-actions">
+            {% if not g.is_primary %}
+              <form action="{{ url_for('goals.set_primary', goal_id=g.id) }}" method="post">
+                <button type="submit" class="btn btn-secondary">Make primary</button>
+              </form>
+            {% endif %}
+            <form action="{{ url_for('goals.delete_goal', goal_id=g.id) }}" method="post">
+              <button type="submit" class="btn btn-secondary">Remove</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="subtitle" style="margin: 0;">No active goals yet.</p>
+  {% endif %}
+
+  <details class="goal-new-form" id="new-goal">
+    <summary class="btn btn-primary">Set a new goal</summary>
+    {% if target_groups %}
+      <form action="{{ url_for('goals.create_goal') }}" method="post" class="goal-form">
+        <label>Target move
+          <select name="target" required>
+            <option value="">Choose a move&hellip;</option>
+            {% for group in target_groups %}
+              <optgroup label="{{ group.label }}">
+                {% for opt in group.options %}
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Target date (optional)<input type="date" name="target_date"></label>
+        <label>Note (optional)<input type="text" name="note" maxlength="240" placeholder="e.g. focus on hip compression before progressing"></label>
+        <label class="goal-primary-checkbox"><input type="checkbox" name="is_primary"> Make this my primary goal</label>
+        <button type="submit" class="btn btn-primary">Add goal</button>
+      </form>
+    {% else %}
+      <p class="subtitle">Every tracked move already has an active goal or is unlocked - nothing left to target right now.</p>
+    {% endif %}
+  </details>
+</section>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Upcoming&nbsp;events</p>
+
+  <div class="mini-calendar">
+    <p class="mini-calendar-title">{{ calendar_view.month_label }} {{ calendar_view.year }}</p>
+    <div class="mini-calendar-grid">
+      {% for wd in ['Mo','Tu','We','Th','Fr','Sa','Su'] %}<div class="mini-calendar-weekday">{{ wd }}</div>{% endfor %}
+      {% for week in calendar_view.weeks %}
+        {% for day in week %}
+          {% if day %}
+            <div class="mini-calendar-day {{ 'has-events' if day.events }} {{ 'is-today' if day.day == today.day and calendar_view.month == today.month and calendar_view.year == today.year }}">
+              <span class="mini-calendar-day-number">{{ day.day }}</span>
+              {% for e in day.events %}<span class="mini-calendar-event-dot" title="{{ e.name }}"></span>{% endfor %}
+            </div>
+          {% else %}
+            <div class="mini-calendar-day mini-calendar-day-empty"></div>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if upcoming_events %}
+    <div class="event-list">
+      {% for e in upcoming_events %}
+        <div class="event-row">
+          <div class="event-row-date">
+            <span class="event-row-days">{{ e.days_away }}<small>d</small></span>
+          </div>
+          <div class="event-row-body">
+            <p class="event-row-name">{{ e.name }}</p>
+            <p class="event-row-meta">{{ e.event_date.strftime('%B %-d, %Y') }}{% if e.location %} &middot; {{ e.location }}{% endif %}</p>
+            {% if e.notes %}<p class="event-row-notes">{{ e.notes }}</p>{% endif %}
+            {% if e.linked_goals %}
+              <div class="countdown-linked-goals">
+                {% for g in e.linked_goals %}
+                  <span class="linked-goal-chip {{ 'is-unlocked' if g.is_unlocked }}">{{ g.icon }} {{ g.target_label }}{% if g.is_unlocked %} &check;{% endif %}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          <form action="{{ url_for('goals.delete_event', event_id=e.id) }}" method="post">
+            <button type="submit" class="btn btn-secondary">Remove</button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="subtitle">No upcoming events yet.</p>
+  {% endif %}
+
+  <details class="goal-new-form" id="new-event">
+    <summary class="btn btn-primary">Add an event</summary>
+    <form action="{{ url_for('goals.create_event') }}" method="post" class="goal-form">
+      <label>Name<input type="text" name="name" maxlength="120" required placeholder="e.g. Calisthenics meetup"></label>
+      <label>Date<input type="date" name="event_date" required></label>
+      <label>Location (optional)<input type="text" name="location" maxlength="120"></label>
+      <label>Notes (optional)<input type="text" name="notes" maxlength="240"></label>
+      {% if linkable_goals %}
+        <fieldset class="goal-link-fieldset">
+          <legend>Link goals you want unlocked before this event</legend>
+          {% for g in linkable_goals %}
+            <label class="goal-link-option"><input type="checkbox" name="goal_ids" value="{{ g.id }}"> {{ g.icon }} {{ g.target_label }}</label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">Add event</button>
+    </form>
+  </details>
+</section>
+
+{% if completed_goals or past_events %}
+<details class="panel goals-archive">
+  <summary class="panel-title"><span class="dot"></span>Completed&nbsp;goals&nbsp;&amp;&nbsp;past&nbsp;events</summary>
+
+  {% if completed_goals %}
+    <p class="field-label">Completed goals</p>
+    <div class="goal-card-grid">
+      {% for g in completed_goals %}
+        <div class="goal-card is-completed">
+          <span class="goal-completed-badge">&check; Completed</span>
+          <p class="goal-card-icon">{{ g.icon }}</p>
+          <p class="goal-card-label">{{ g.target_label }}</p>
+          <p class="goal-progress-detail">{{ g.completed_at.strftime('%b %-d, %Y') if g.completed_at }}</p>
+          {% if g.note %}<p class="goal-note">&ldquo;{{ g.note }}&rdquo;</p>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if past_events %}
+    <p class="field-label" style="margin-top: 1.4rem;">Past events</p>
+    <div class="event-list">
+      {% for e in past_events %}
+        <div class="event-row is-past">
+          <div class="event-row-body">
+            <p class="event-row-name">{{ e.name }}</p>
+            <p class="event-row-meta">{{ e.event_date.strftime('%B %-d, %Y') }}{% if e.location %} &middot; {{ e.location }}{% endif %}</p>
+          </div>
+          <form action="{{ url_for('goals.delete_event', event_id=e.id) }}" method="post">
+            <button type="submit" class="btn btn-secondary">Remove</button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</details>
+{% endif %}
+{% endblock %}

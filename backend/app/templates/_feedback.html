@@ -1,0 +1,49 @@
+{# Shared feedback sections for both static holds and dynamic rep sets -
+   `feedback` is a dict/object with .summary, .strengths, .refine, .weaknesses
+   (see pipeline/feedback.py). Every item is "Criterion name: specific note". #}
+<section class="panel feedback-summary-panel">
+  <p class="panel-title"><span class="dot"></span>Summary</p>
+  <p class="feedback-summary">{{ feedback.summary }}</p>
+</section>
+
+{% if feedback.strengths %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Strengths</p>
+  <ul class="feedback-list feedback-strengths">
+    {% for item in feedback.strengths %}
+      <li>
+        <span class="feedback-icon">&#10003;</span>
+        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if feedback.refine %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Areas to refine</p>
+  <ul class="feedback-list feedback-refine">
+    {% for item in feedback.refine %}
+      <li>
+        <span class="feedback-icon">&#8226;</span>
+        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if feedback.weaknesses %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Weaknesses</p>
+  <ul class="feedback-list feedback-weaknesses">
+    {% for item in feedback.weaknesses %}
+      <li>
+        <span class="feedback-icon">&#33;</span>
+        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
