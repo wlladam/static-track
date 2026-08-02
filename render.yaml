@@ -17,7 +17,13 @@ services:
     plan: free
     rootDir: backend
     buildCommand: ./build.sh
-    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT
+    # --timeout 300: gunicorn's default (30s) kills the request mid-way
+    # through pose analysis on anything but a very short clip, especially
+    # on the free tier's slower CPU - that's the "Internal Server Error"
+    # this fixes. Video upload/analysis runs synchronously in the request
+    # (see app/routes.py's upload()), so the worker genuinely needs this
+    # long, not just a config band-aid.
+    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --timeout 300
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
