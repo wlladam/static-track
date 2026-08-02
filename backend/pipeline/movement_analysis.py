@@ -302,6 +302,29 @@ def _combo_move_label(variant: Optional[VariantResult]) -> str:
     return f"{prefix}{variant.progression.replace('_', ' ')} {variant.move_type.replace('_', ' ')}"
 
 
+def _combo_move_kind(variant: Optional[VariantResult], start_sec: float, end_sec: float) -> str:
+    """"touch" | "hold" for one combo move. A front lever's touch/hold
+    distinction is about hip-to-bar contact (see variant_classification.py's
+    TOUCH_GAP_RATIO_THRESHOLD), not duration - a real touch was held a full
+    2 seconds, the same as the non-touching full front lever right after it
+    in the same clip. Duration only decides "kind" as a fallback when
+    touch-ness isn't measurable (variant.is_touch is None: not a front
+    lever, or the feature couldn't be computed) - and even then, ONLY for a
+    front lever move: "touch" is a front-lever-specific concept, so a brief
+    planche (or any non-front-lever) segment must never be duration-
+    fallback-labeled "touch" - that produced a real, nonsensical "straddle
+    planche touch" on a real clip (a straddle-planche push-up-into-a-press
+    clip uploaded as a combo, before push/pull-into-hold clips were routed
+    to _analyze_dynamic instead - see _analyze_combo's docstring). A short
+    non-front-lever segment is just a brief hold.
+    """
+    if variant and variant.is_touch is not None:
+        return "touch" if variant.is_touch else "hold"
+    if variant and variant.move_type == "front_lever":
+        return "touch" if (end_sec - start_sec) < TOUCH_KIND_CUTOFF_SEC else "hold"
+    return "hold"
+
+
 def _touch_depth_note(is_touch: bool, gap_ratio: Optional[float]) -> str:
     """A touch front lever's whole point is hip-to-bar contact - a "touch"
     that's technically over the threshold but still fairly close to it is
@@ -347,7 +370,31 @@ def _analyze_combo(
     progressions genuinely differ move to move, leave this on auto-detect
     and expect the same straddle-vs-full unreliability documented in
     classify_variant for whichever moves are actually straddle/full.
+
+    Delegates to _analyze_dynamic when detect_elbow_reps finds a genuine
+    push/pull rep cycle in the clip. A real clip uploaded as "combo"
+    (straddle planche push-up into a straddle planche press) exposed that
+    athletes reach for "combo" for any multi-phase clip, not just distinct
+    static positions strung together - and detect_all_holds's segmentation
+    is the wrong tool for a rep-into-hold movement: it saw the same clip as
+    three separate static "holds" (the pre-press pause, then each rep's
+    lockout), and duration-labeled the shortest one (0.2s) a "touch" purely
+    from TOUCH_KIND_CUTOFF_SEC - nonsensical for a planche, since "touch"
+    is a front-lever-specific hip-to-bar concept (see is_touch's gating in
+    classify_variant). Checking for real elbow-driven reps first routes
+    this shape of clip through the analysis that's actually built for it
+    (_analyze_dynamic already produces exercise_type="planche_push_up_to_hold"
+    with a correct rep count and per-rep hip/shoulder alignment score for
+    this exact clip) rather than fragmenting one continuous effort into
+    several oddly-labeled static "moves". A genuine multi-position combo
+    (tuck FL -> straddle FL -> full FL) has no meaningful elbow ROM, so
+    detect_elbow_reps naturally finds nothing there and this falls through
+    to the static-segment path below unchanged.
     """
+    rep_set = detect_elbow_reps(records)
+    if rep_set is not None:
+        return _analyze_dynamic(records, progression_hint=progression_hint)
+
     segments = detect_all_holds(records)
     if not segments:
         return None
@@ -368,16 +415,7 @@ def _analyze_combo(
         report = compute_form_report(core_records, subject_label=subject_label)
         start_sec = window_records[0]["timestamp_sec"]
         end_sec = window_records[-1]["timestamp_sec"]
-        # A front lever's touch/hold distinction is about hip-to-bar contact
-        # (see variant_classification.py's TOUCH_GAP_RATIO_THRESHOLD), not
-        # duration - a real touch was held a full 2 seconds, same as the
-        # non-touching full front lever right after it. Duration only
-        # decides "kind" as a fallback when touch-ness isn't measurable
-        # (not a front lever, or the feature couldn't be computed).
-        if variant and variant.is_touch is not None:
-            kind = "touch" if variant.is_touch else "hold"
-        else:
-            kind = "touch" if (end_sec - start_sec) < TOUCH_KIND_CUTOFF_SEC else "hold"
+        kind = _combo_move_kind(variant, start_sec, end_sec)
         critique = (
             build_one_line_critique(report.criteria, subject_label)
             if report

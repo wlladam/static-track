@@ -92,16 +92,24 @@ def _combo_records(move_landmarks_list, cluster_len=8, transition_len=3, fps=FPS
     ]
 
 
-def _triangle_wave_records(base_landmarks, n_reps, bottom=0.50, top=0.25, steps_per_half=5):
+def _triangle_wave_records(base_landmarks, n_reps, bottom=0.50, top=0.25, steps_per_half=5, peak_hold_frames=1):
     """A repeating bottom->top->bottom hip-height oscillation, with straight
     elbows at the trough (bottom, i.e. arms locked) bending sharply at each
     peak (top) to give real elbow ROM - mimics a pull-up/push-up's arm-driven
     motion, not a body-driven raise.
+
+    peak_hold_frames repeats the peak (bent-elbow) frame this many times -
+    detect_elbow_reps median-smooths the elbow-angle signal (window=3), so a
+    single-frame bend (the default, matching the original fixture shape)
+    gets smoothed away entirely and only hip-height rep detection fires
+    instead. Pass 3+ to also exercise the elbow-driven detection path
+    itself, closer to how a real rep's brief top pause actually looks.
     """
     hip_ys = [bottom]
     for _ in range(n_reps):
         for i in range(1, steps_per_half + 1):
             hip_ys.append(bottom + (top - bottom) * i / steps_per_half)
+        hip_ys.extend([top] * (peak_hold_frames - 1))
         for i in range(1, steps_per_half + 1):
             hip_ys.append(top + (bottom - top) * i / steps_per_half)
 
@@ -279,3 +287,50 @@ def test_combo_progression_hint_applies_to_every_move():
     assert len(combo.moves) == 2
     assert combo.moves[0].progression == "straddle"
     assert combo.moves[1].progression == "straddle"
+
+
+def test_combo_delegates_to_dynamic_reps_when_real_elbow_reps_found():
+    # A real "combo"-uploaded clip (straddle planche push-up into a straddle
+    # planche press) exposed that athletes reach for "combo" for any
+    # multi-phase clip, not just distinct static positions strung together.
+    # detect_all_holds saw that clip as three separate static "holds" and
+    # mislabeled the shortest one a nonsensical "straddle planche touch".
+    # A genuine push/pull rep cycle should route through the dynamic-reps
+    # analysis that's actually built for it, regardless of which hint the
+    # athlete picked.
+    records = _triangle_wave_records(PLANCHE_LANDMARKS, n_reps=2, peak_hold_frames=3)
+
+    outcome = analyze_movement(records, movement_type_hint="combo")
+
+    assert outcome is not None
+    kind, dynamic = outcome
+    assert kind == "dynamic_reps"
+    # "_to_hold" (a rep that presses up and stays, rather than cycling back
+    # down) is an equally valid real outcome here depending on the exact
+    # fixture shape - what matters for this regression is that it's a real
+    # push-up exercise_type, not that it's fragmented into bogus combo moves.
+    assert dynamic.exercise_type in ("planche_push_up", "planche_push_up_to_hold")
+    assert dynamic.rep_count >= 2
+
+
+def test_combo_never_labels_a_brief_planche_move_touch():
+    # "Touch" is a front-lever-specific concept (hip-to-bar contact) - a
+    # brief planche segment must never be duration-fallback-labeled "touch";
+    # it's just a brief hold. Tested directly against _combo_move_kind
+    # (rather than through full segment auto-detection) since a segment
+    # this short is, by construction, right at the edge of what
+    # detect_all_holds can reliably isolate on its own - the kind-decision
+    # logic itself is the thing this regression guards.
+    from pipeline.movement_analysis import _combo_move_kind
+    from pipeline.variant_classification import VariantResult
+
+    planche_variant = VariantResult(move_type="planche", progression="straddle", features={}, is_touch=None)
+
+    # Well under TOUCH_KIND_CUTOFF_SEC (1.0s) - the exact shape that used to
+    # get duration-fallback-labeled "touch" before this fix.
+    assert _combo_move_kind(planche_variant, start_sec=0.0, end_sec=0.2) == "hold"
+
+    # A front lever with unmeasurable touch-ness still falls back to
+    # duration - only non-front-lever moves are exempted.
+    front_lever_variant = VariantResult(move_type="front_lever", progression="full", features={}, is_touch=None)
+    assert _combo_move_kind(front_lever_variant, start_sec=0.0, end_sec=0.2) == "touch"
