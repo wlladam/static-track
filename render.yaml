@@ -17,13 +17,18 @@ services:
     plan: free
     rootDir: backend
     buildCommand: ./build.sh
-    # --timeout 300: gunicorn's default (30s) kills the request mid-way
-    # through pose analysis on anything but a very short clip, especially
-    # on the free tier's slower CPU - that's the "Internal Server Error"
-    # this fixes. Video upload/analysis runs synchronously in the request
-    # (see app/routes.py's upload()), so the worker genuinely needs this
-    # long, not just a config band-aid.
-    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --timeout 300
+    # --timeout 900: gunicorn's default (30s) kills the request mid-way
+    # through pose analysis on anything but a very short clip. Free tier's
+    # CPU is dramatically slower than a real machine for this kind of
+    # frame-by-frame video work - a real clip that processes in well under
+    # a minute locally took 5+ minutes here and still didn't finish at
+    # --timeout 300, even after cutting real work (see
+    # app/pipeline_runner.py's IS_SLOW_HOST: lower frame sample rate, debug
+    # overlay generation skipped). Video upload/analysis runs synchronously
+    # in the request (see app/routes.py's upload()), so the worker
+    # genuinely needs this much room - there's no way around a fairly long
+    # wait on this hardware without a paid plan's real CPU.
+    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --timeout 900
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0

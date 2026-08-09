@@ -5,12 +5,29 @@ Wraps the same pipeline modules exercised by the CLI scripts
 no separate reimplementation of hold detection/scoring here.
 """
 import json
+import os
 from pathlib import Path
 
 from pipeline.movement_analysis import analyze_movement
 from pipeline.run_pipeline import run as run_pose_pipeline
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+# Render sets RENDER=true in every service's environment automatically - a
+# free-tier CPU is a fraction of the speed of a real machine, and a real
+# clip that processes in well under a minute locally was clocked at 5+
+# minutes (and still incomplete) there. Two things cut real, unavoidable
+# work rather than just papering over it with a longer timeout:
+#   - skip_debug_overlay: the skeleton-overlay video is a nice-to-have for
+#     the report page, not needed for scoring, but generating it means
+#     re-decoding + drawing + re-encoding the ENTIRE video a second time.
+#   - a lower sample rate: fewer frames sent through MediaPipe's (the
+#     actual CPU-heavy step) pose inference, at some cost to temporal
+#     resolution for rep detection.
+# Both are skipped/reduced only on a detected slow host - local dev and
+# tests keep full fidelity (target_fps=5.0, overlay always generated).
+IS_SLOW_HOST = bool(os.environ.get("RENDER"))
+TARGET_FPS = 2.5 if IS_SLOW_HOST else 5.0
 
 EMPTY_RESULT = {
     "hold_detected": False,
@@ -51,7 +68,9 @@ def process_video(
     auto-classified from a single side-view camera.
     """
     data_dir = Path(data_dir) if data_dir else DATA_DIR
-    json_path = run_pose_pipeline(str(video_path), target_fps=5.0, output_dir=data_dir)
+    json_path = run_pose_pipeline(
+        str(video_path), target_fps=TARGET_FPS, output_dir=data_dir, skip_debug_overlay=IS_SLOW_HOST
+    )
     records = json.loads(json_path.read_text())
 
     debug_overlay_path = data_dir / "debug_overlays" / f"{video_path.stem}_overlay.mp4"

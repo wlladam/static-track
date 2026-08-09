@@ -25,7 +25,15 @@ from pipeline.pose_estimation import PoseEstimator
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def run(video_path: str, target_fps: float, output_dir: Path) -> Path:
+def run(video_path: str, target_fps: float, output_dir: Path, skip_debug_overlay: bool = False) -> Path:
+    """skip_debug_overlay=True cuts pass 2 (re-decoding + drawing + encoding
+    the whole video a second time, purely to produce the optional skeleton-
+    overlay video) - real cost on a CPU-constrained host, and not needed for
+    scoring, only for the report page's "watch the overlay" nice-to-have.
+    Defaults to False (unchanged behavior for existing callers) - see
+    app/pipeline_runner.py for where this gets enabled automatically on a
+    slow/free-tier deploy.
+    """
     video_path = Path(video_path)
     pose_output_dir = output_dir / "pose_output"
     debug_output_dir = output_dir / "debug_overlays"
@@ -52,25 +60,27 @@ def run(video_path: str, target_fps: float, output_dir: Path) -> Path:
     records_by_frame = {r["frame_index"]: r for r in records}
 
     # Pass 2: re-decode the video and draw the smoothed skeleton onto the
-    # frames that had a detected pose.
+    # frames that had a detected pose. Skippable - see skip_debug_overlay's
+    # docstring above.
     debug_writer = None
     debug_video_path = debug_output_dir / f"{video_path.stem}_overlay.mp4"
 
-    for sampled_frame in extract_frames(str(video_path), target_fps=target_fps):
-        record = records_by_frame.get(sampled_frame.frame_index)
-        if record is None:
-            continue
+    if not skip_debug_overlay:
+        for sampled_frame in extract_frames(str(video_path), target_fps=target_fps):
+            record = records_by_frame.get(sampled_frame.frame_index)
+            if record is None:
+                continue
 
-        annotated = draw_skeleton(sampled_frame.image, record["landmarks"])
-        if debug_writer is None:
-            height, width = annotated.shape[:2]
-            debug_writer = DebugVideoWriter(
-                str(debug_video_path), fps=target_fps, frame_size=(width, height)
-            )
-        debug_writer.write(annotated)
+            annotated = draw_skeleton(sampled_frame.image, record["landmarks"])
+            if debug_writer is None:
+                height, width = annotated.shape[:2]
+                debug_writer = DebugVideoWriter(
+                    str(debug_video_path), fps=target_fps, frame_size=(width, height)
+                )
+            debug_writer.write(annotated)
 
-    if debug_writer is not None:
-        debug_writer.close()
+        if debug_writer is not None:
+            debug_writer.close()
 
     json_path = pose_output_dir / f"{video_path.stem}_pose.json"
     json_path.write_text(json.dumps(records, indent=2))
