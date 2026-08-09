@@ -1,15 +1,31 @@
 # Render Blueprint - https://render.com/docs/blueprint-spec
 #
-# Deploys the HOLDFAST Flask app (backend/) as a single web service on
-# Render's free tier. Two things worth knowing about the free tier:
-#   1. The service spins down after 15 min idle - the next request wakes
-#      it back up (~30-50s cold start). Fine for personal/occasional use.
-#   2. Free tier has no persistent disk, so backend/data/ (the SQLite DB
-#      and uploaded videos) is wiped on every redeploy/restart. That's a
-#      real limitation for this app's current local-file storage design -
-#      fine for trying it out online, but anything you want to keep long
-#      term should eventually move to a real Postgres DB + S3/R2-style
-#      object storage instead of local disk.
+# Deploys the HOLDFAST Flask app (backend/) plus a real managed Postgres
+# database on Render's free tier. Things worth knowing:
+#   1. The web service spins down after 15 min idle - the next request
+#      wakes it back up (~30-50s cold start). Fine for personal/occasional
+#      use.
+#   2. The web service itself has no persistent disk, so uploaded video
+#      files written to backend/data/ are still wiped on every
+#      redeploy/restart - see app/pipeline_runner.py and app/storage.py's
+#      module docstrings. Account data (users, profiles, skill progress,
+#      goals, events, friendships, session history) now lives in the
+#      Postgres database below instead, which DOES persist across
+#      deploys/restarts - that's the part this Blueprint fixes. Video
+#      *files* persisting long-term still needs real object storage
+#      (S3/Cloudflare R2) - see app/storage.py for the ready-to-configure
+#      code path; provisioning an actual bucket needs a manual signup on
+#      that provider's side (a real account + API keys), which isn't
+#      something this repo can do for you via CLI/config.
+#   3. Free Postgres instances on Render expire after 90 days unless
+#      upgraded to a paid plan - a heads-up for anyone relying on this
+#      long-term, not a blocker for getting started.
+databases:
+  - name: holdfast-db
+    plan: free
+    databaseName: holdfast
+    user: holdfast
+
 services:
   - type: web
     name: holdfast
@@ -32,3 +48,17 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      # Real Postgres, provisioned by this same Blueprint (see `databases`
+      # above) - Render wires the live connection string in automatically
+      # on deploy, no manual dashboard step. app/__init__.py's
+      # _resolve_database_uri reads this and falls back to local SQLite
+      # only when it's absent (e.g. running locally).
+      - key: DATABASE_URL
+        fromDatabase:
+          name: holdfast-db
+          property: connectionString
+      # Backs session/login cookies - generateValue makes Render mint a
+      # real random secret at provision time instead of this repo shipping
+      # a hardcoded one.
+      - key: SECRET_KEY
+        generateValue: true

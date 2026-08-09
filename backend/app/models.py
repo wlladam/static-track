@@ -1,10 +1,44 @@
-"""Database model for a single analyzed video attempt."""
+"""Database models for HOLDFAST.
+
+Every athlete's data (profile, skill trees, badges, goals, events, session
+history, friends) is owned by a real authenticated User account - see
+User below and app/auth.py for signup/login/logout. This replaced an
+earlier single-local-profile design (no accounts at all); see
+app/__init__.py's `_migrate_legacy_data` for how the pre-existing local
+data was carried forward onto the first real account rather than lost.
+"""
 import json
 from datetime import datetime, timezone
 
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
+
+
+class User(UserMixin, db.Model):
+    """A real athlete account - email + hashed password, the identity
+    everything else in this file (profile, skill progress, badges, goals,
+    events, attempts, friendships) is now owned by via a `user_id` /
+    one-to-one `id` foreign key. UserMixin supplies Flask-Login's
+    is_authenticated/is_active/get_id plumbing.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String, nullable=False, unique=True, index=True)
+    password_hash = db.Column(db.String, nullable=False)
+    # Search/display name for Friends - separate from `name` on
+    # AthleteProfile (that one's editable profile flavor text; this is the
+    # stable handle other athletes search for and friend requests show).
+    display_name = db.Column(db.String, nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def set_password(self, raw_password: str) -> None:
+        self.password_hash = generate_password_hash(raw_password)
+
+    def check_password(self, raw_password: str) -> bool:
+        return check_password_hash(self.password_hash, raw_password)
 
 # Progress-over-time was misleading without this: a 95 on a tuck (the
 # easiest progression) and a 90 on a full front lever (a much harder one)
@@ -33,6 +67,11 @@ PROGRESSION_DIFFICULTY_MULTIPLIER = {
 
 class Attempt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Nullable at the column level only to allow pre-accounts legacy rows to
+    # exist transiently until migrated (see app/__init__.py's
+    # _migrate_legacy_data) - every row created going forward always sets
+    # this.
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     original_filename = db.Column(db.String, nullable=False)
     video_path = db.Column(db.String, nullable=False)
     debug_overlay_path = db.Column(db.String, nullable=True)
@@ -68,12 +107,6 @@ class Attempt(db.Model):
     reps_json = db.Column(db.Text, nullable=True)
 
     error = db.Column(db.String, nullable=True)
-
-    # True for a clip submitted as one side of a Duel (see the Duels
-    # section below) rather than a normal tracked session - History/Goals/
-    # Profile stats should keep ignoring these so a duel clip doesn't
-    # silently inflate "most-trained move" or time-under-tension.
-    is_duel_submission = db.Column(db.Boolean, nullable=False, default=False)
 
     @property
     def report(self) -> dict:
@@ -165,8 +198,11 @@ class Attempt(db.Model):
 
 # ============================================================
 # Athlete Profile - deliberately separate models from Attempt above.
-# This is a single-user local tool (no auth), so AthleteProfile is a
-# singleton row (id is always 1) rather than modeling a users table.
+# One row per User, one-to-one (AthleteProfile.id IS the owning user's id -
+# no separate user_id column needed for a 1:1 relationship). Used to be a
+# single hardcoded singleton row (id always 1) before real accounts
+# existed; seeded_get_or_create_profile(user_id) in profile_routes.py now
+# creates one per user on first visit, same lazy-creation pattern as before.
 # ============================================================
 
 EXPERIENCE_LEVELS = ("Beginner", "Intermediate", "Advanced", "Elite")
@@ -185,7 +221,7 @@ TRAINING_TIMES = ("Early Morning", "Morning", "Midday", "Evening", "Late Night",
 
 
 class AthleteProfile(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
     name = db.Column(db.String, nullable=True)
     age = db.Column(db.Integer, nullable=True)
     weight_kg = db.Column(db.Float, nullable=True)
@@ -276,12 +312,15 @@ class SkillProgress(db.Model):
     """
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     tree = db.Column(db.String, nullable=False)  # "front_lever" | "planche"
     progression_key = db.Column(db.String, nullable=False)  # e.g. "tuck"
     unlocked = db.Column(db.Boolean, nullable=False, default=False)
     date_achieved = db.Column(db.Date, nullable=True)
 
-    __table_args__ = (db.UniqueConstraint("tree", "progression_key", name="uq_skill_tree_progression"),)
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "tree", "progression_key", name="uq_skill_tree_progression"),
+    )
 
 
 # Extensible combo/dynamic-move badge system - not hardcoded to a fixed
@@ -465,10 +504,13 @@ class ComboBadgeProgress(db.Model):
     """
 
     id = db.Column(db.Integer, primary_key=True)
-    badge_key = db.Column(db.String, nullable=False, unique=True)  # key into COMBO_BADGES
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    badge_key = db.Column(db.String, nullable=False)  # key into COMBO_BADGES
     unlocked = db.Column(db.Boolean, nullable=False, default=False)
     date_achieved = db.Column(db.Date, nullable=True)
     rep_pr = db.Column(db.Integer, nullable=True)
+
+    __table_args__ = (db.UniqueConstraint("user_id", "badge_key", name="uq_combo_badge_progress_user"),)
 
 
 # ============================================================
@@ -498,6 +540,7 @@ class SkillGoal(db.Model):
     __tablename__ = "skill_goal"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     kind = db.Column(db.String, nullable=False)  # "skill" | "combo"
     tree_key = db.Column(db.String, nullable=True)
     progression_key = db.Column(db.String, nullable=True)
@@ -526,6 +569,7 @@ class Event(db.Model):
     """
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     name = db.Column(db.String, nullable=False)
     event_date = db.Column(db.Date, nullable=False)
     location = db.Column(db.String, nullable=True)
@@ -535,111 +579,39 @@ class Event(db.Model):
     goals = db.relationship("SkillGoal", secondary=event_goal_links, back_populates="events")
 
 
+
 # ============================================================
-# Duels - Online Ranked Duel Mode. Deliberately separate section from
-# Profile/Goals/History (own route/screen), but reuses Attempt +
-# difficulty_adjusted_score as the sole source of truth for who won - no
-# parallel scoring system.
-#
-# IMPORTANT SCOPE NOTE: this app has no server, no network layer, and no
-# real multi-user auth anywhere (AthleteProfile is a single-row local
-# singleton). Building genuine cross-machine networked play would mean
-# standing up hosting + real auth, which is out of scope for a
-# `python run.py` localhost tool. AthleteAccount below is a deliberately
-# lightweight *local* multi-identity model instead (named accounts, no
-# passwords) so the full duel/ranking loop is real and testable today -
-# matchmaking falls back to seeded bot accounts when no other human
-# account is queued for the same move. Real networked play is a follow-up
-# that needs a real backend, not a database change.
+# Friends - relationships between real User accounts. Used to run on a
+# bare local-identity stand-in (AthleteAccount, no password) before real
+# accounts existed; now points at User directly.
 # ============================================================
 
-RANK_TIERS = [
-    {"key": "bronze", "label": "Bronze", "floor": 0},
-    {"key": "silver", "label": "Silver", "floor": 1200},
-    {"key": "gold", "label": "Gold", "floor": 1500},
-    {"key": "platinum", "label": "Platinum", "floor": 1800},
-    {"key": "diamond", "label": "Diamond", "floor": 2100},
-]
 
-STARTING_RATING = 1000
-ELO_K_FACTOR = 32
+class Friendship(db.Model):
+    """One friend relationship between two Users - a single directional row
+    (requester -> addressee) rather than a row per side, so "are we
+    friends" can never drift out of sync between the two accounts (there's
+    exactly one row to check, from either side).
 
-
-def tier_for_rating(rating: int) -> dict:
-    tier = RANK_TIERS[0]
-    for t in RANK_TIERS:
-        if rating >= t["floor"]:
-            tier = t
-    return tier
-
-
-class AthleteAccount(db.Model):
-    """A local competitive identity - deliberately just a display name, no
-    password (see the module-level scope note above on why this isn't real
-    networked auth). `is_bot` accounts are seeded matchmaking fallback
-    opponents (see duels_routes.py's seed_bot_accounts) so a duel can
-    resolve immediately even with only one real local athlete.
+    status: "pending" (requester sent it, addressee hasn't responded) or
+    "accepted" (addressee accepted). A decline or an unfriend just deletes
+    the row - "not connected" is the natural rest state, and deleting lets
+    a fresh request be sent later rather than needing a permanent
+    "declined" state that blocks that.
     """
 
-    id = db.Column(db.Integer, primary_key=True)
-    display_name = db.Column(db.String, nullable=False, unique=True)
-    rating = db.Column(db.Integer, nullable=False, default=STARTING_RATING)
-    is_bot = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-    @property
-    def tier(self) -> dict:
-        return tier_for_rating(self.rating)
-
-
-class Duel(db.Model):
-    """One asynchronous, submission-based ranked duel over a single move.
-
-    Lifecycle: "queued" (challenger created it, no opponent matched yet -
-    practically transient since matchmaking always falls back to a bot) ->
-    "awaiting_submissions" (opponent matched, waiting on one or both clips)
-    -> "scored" (both Attempts in, winner/rating decided) -> "abandoned"
-    (challenger cancelled while still queued).
-    """
+    __table_args__ = (db.UniqueConstraint("requester_id", "addressee_id", name="uq_friendship_pair"),)
 
     id = db.Column(db.Integer, primary_key=True)
-    move_key = db.Column(db.String, nullable=False)  # e.g. "static:front_lever:full"
-    move_label = db.Column(db.String, nullable=False)
-
-    challenger_id = db.Column(db.Integer, db.ForeignKey("athlete_account.id"), nullable=False)
-    opponent_id = db.Column(db.Integer, db.ForeignKey("athlete_account.id"), nullable=True)
-
-    challenger_attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=True)
-    opponent_attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=True)
-
-    status = db.Column(db.String, nullable=False, default="queued")
-    winner_id = db.Column(db.Integer, db.ForeignKey("athlete_account.id"), nullable=True)
-    is_draw = db.Column(db.Boolean, nullable=False, default=False)
-
-    challenger_rating_before = db.Column(db.Integer, nullable=True)
-    challenger_rating_after = db.Column(db.Integer, nullable=True)
-    opponent_rating_before = db.Column(db.Integer, nullable=True)
-    opponent_rating_after = db.Column(db.Integer, nullable=True)
-
+    requester_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    addressee_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    status = db.Column(db.String, nullable=False, default="pending")  # "pending" | "accepted"
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    scored_at = db.Column(db.DateTime, nullable=True)
+    responded_at = db.Column(db.DateTime, nullable=True)
 
-    challenger = db.relationship("AthleteAccount", foreign_keys=[challenger_id])
-    opponent = db.relationship("AthleteAccount", foreign_keys=[opponent_id])
-    winner = db.relationship("AthleteAccount", foreign_keys=[winner_id])
-    challenger_attempt = db.relationship("Attempt", foreign_keys=[challenger_attempt_id])
-    opponent_attempt = db.relationship("Attempt", foreign_keys=[opponent_attempt_id])
+    requester = db.relationship("User", foreign_keys=[requester_id])
+    addressee = db.relationship("User", foreign_keys=[addressee_id])
 
-    def attempt_for(self, account_id: int):
-        if account_id == self.challenger_id:
-            return self.challenger_attempt
-        if account_id == self.opponent_id:
-            return self.opponent_attempt
-        return None
-
-    def opponent_of(self, account_id: int):
-        if account_id == self.challenger_id:
-            return self.opponent
-        if account_id == self.opponent_id:
-            return self.challenger
-        return None
+    def other(self, account_id: int):
+        """The account on the far side of this relationship from `account_id`."""
+        return self.addressee if account_id == self.requester_id else self.requester

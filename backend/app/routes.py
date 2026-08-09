@@ -2,6 +2,7 @@
 import uuid
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 
 from app import history_analytics
@@ -23,7 +24,7 @@ def _allowed_file(filename: str) -> bool:
 @bp.route("/")
 def index():
     recent = (
-        Attempt.query.filter_by(is_duel_submission=False).order_by(Attempt.uploaded_at.desc()).limit(5).all()
+        Attempt.query.filter_by(user_id=current_user.id).order_by(Attempt.uploaded_at.desc()).limit(5).all()
     )
     return render_template("index.html", recent=recent)
 
@@ -59,9 +60,12 @@ def upload():
         result = process_video(
             video_path, data_dir=data_dir, movement_type_hint=movement_type_hint, progression_hint=progression_hint
         )
-        attempt = Attempt(original_filename=original_filename, video_path=str(video_path), **result)
+        attempt = Attempt(
+            user_id=current_user.id, original_filename=original_filename, video_path=str(video_path), **result
+        )
     except Exception as exc:  # noqa: BLE001 - surface any pipeline failure to the user, not a 500
         attempt = Attempt(
+            user_id=current_user.id,
             original_filename=original_filename,
             video_path=str(video_path),
             hold_detected=False,
@@ -76,15 +80,14 @@ def upload():
 @bp.route("/attempts/<int:attempt_id>")
 def report(attempt_id):
     attempt = db.get_or_404(Attempt, attempt_id)
+    if attempt.user_id != current_user.id:
+        abort(404)
     return render_template("report.html", attempt=attempt)
 
 
 @bp.route("/history")
 def history():
-    # Excludes duel submissions (see Attempt.is_duel_submission) - a duel
-    # clip (or a synthetic bot "clip") isn't a tracked training session and
-    # shouldn't count toward most-trained-move, time-under-tension, etc.
-    all_attempts = Attempt.query.filter_by(is_duel_submission=False).order_by(Attempt.uploaded_at.asc()).all()
+    all_attempts = Attempt.query.filter_by(user_id=current_user.id).order_by(Attempt.uploaded_at.asc()).all()
 
     range_key = request.args.get("range", "all")
     family_key = request.args.get("family", "all")
@@ -194,6 +197,8 @@ def history():
 @bp.route("/media/overlay/<int:attempt_id>")
 def overlay_video(attempt_id):
     attempt = db.get_or_404(Attempt, attempt_id)
+    if attempt.user_id != current_user.id:
+        abort(404)
     if not attempt.debug_overlay_path:
         abort(404)
     return send_file(attempt.debug_overlay_path)

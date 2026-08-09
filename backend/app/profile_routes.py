@@ -11,8 +11,10 @@ import uuid
 from datetime import date, datetime, timezone
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask_login import current_user
 from werkzeug.utils import secure_filename
 
+from app import storage
 from app.models import (
     COMBO_BADGE_FAMILIES,
     COMBO_BADGES,
@@ -39,21 +41,30 @@ def _allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _get_or_create_profile() -> AthleteProfile:
-    profile = db.session.get(AthleteProfile, 1)
+def _get_or_create_profile(user_id: int = None) -> AthleteProfile:
+    """AthleteProfile.id IS the owning user's id (one-to-one FK - see
+    models.py) - defaults to the logged-in user, but friends_routes.py
+    passes a specific id when viewing someone else's (read-only) profile.
+    """
+    user_id = user_id if user_id is not None else current_user.id
+    profile = db.session.get(AthleteProfile, user_id)
     if profile is None:
-        profile = AthleteProfile(id=1)
+        profile = AthleteProfile(id=user_id)
         db.session.add(profile)
         db.session.commit()
     return profile
 
 
-def _skill_progress_map() -> dict:
-    return {(row.tree, row.progression_key): row for row in SkillProgress.query.all()}
+def _skill_progress_map(user_id: int = None) -> dict:
+    user_id = user_id if user_id is not None else current_user.id
+    return {
+        (row.tree, row.progression_key): row for row in SkillProgress.query.filter_by(user_id=user_id).all()
+    }
 
 
-def _combo_progress_map() -> dict:
-    return {row.badge_key: row for row in ComboBadgeProgress.query.all()}
+def _combo_progress_map(user_id: int = None) -> dict:
+    user_id = user_id if user_id is not None else current_user.id
+    return {row.badge_key: row for row in ComboBadgeProgress.query.filter_by(user_id=user_id).all()}
 
 
 def _build_tree_view(tree_key: str, tree_def: dict, progress_map: dict) -> dict:
@@ -110,11 +121,16 @@ def _build_badge_view(badge_key: str, badge_def: dict, progress_map: dict) -> di
     }
 
 
-@bp.route("/")
-def profile():
-    athlete = _get_or_create_profile()
-    skill_progress = _skill_progress_map()
-    combo_progress = _combo_progress_map()
+def build_profile_view_context(athlete: AthleteProfile, user_id: int = None) -> dict:
+    """The trees/badges/tallies profile.html needs for whichever user owns
+    `athlete` - factored out so app/friends_routes.py can render the exact
+    same profile.html for a friend's real, own data in read-only mode
+    without duplicating this logic. Defaults to the logged-in user;
+    friends_routes.py passes the friend's id explicitly.
+    """
+    user_id = user_id if user_id is not None else athlete.id
+    skill_progress = _skill_progress_map(user_id)
+    combo_progress = _combo_progress_map(user_id)
 
     trees = [_build_tree_view(key, tree_def, skill_progress) for key, tree_def in SKILL_TREES.items()]
     badges = [_build_badge_view(key, badge_def, combo_progress) for key, badge_def in COMBO_BADGES.items()]
@@ -134,19 +150,28 @@ def profile():
         for fam in COMBO_BADGE_FAMILIES
     ]
 
+    return {
+        "athlete": athlete,
+        "trees": trees,
+        "badges": badges,
+        "badge_families": badge_families,
+        "total_skill_badges": total_skill_badges,
+        "unlocked_skill_badges": unlocked_skill_badges,
+        "unlocked_combo_badges": unlocked_combo_badges,
+        "total_combo_badges": len(badges),
+    }
+
+
+@bp.route("/")
+def profile():
+    athlete = _get_or_create_profile()
+    context = build_profile_view_context(athlete)
     return render_template(
         "profile.html",
-        athlete=athlete,
-        trees=trees,
-        badges=badges,
-        badge_families=badge_families,
+        **context,
         experience_levels=EXPERIENCE_LEVELS,
         primary_goals=PRIMARY_GOALS,
         training_times=TRAINING_TIMES,
-        total_skill_badges=total_skill_badges,
-        unlocked_skill_badges=unlocked_skill_badges,
-        unlocked_combo_badges=unlocked_combo_badges,
-        total_combo_badges=len(badges),
     )
 
 
@@ -168,6 +193,9 @@ def showcase_upload():
     stored_name = f"{uuid.uuid4().hex}_{original_filename}"
     video_path = data_dir / "raw_videos" / stored_name
     file.save(video_path)
+    # No-op unless object storage is configured (see storage.py) - keeps
+    # the showcase clip surviving a redeploy that wipes local disk.
+    storage.persist(video_path, f"showcase/{current_user.id}/{stored_name}")
 
     athlete.showcase_video_path = str(video_path)
     athlete.showcase_original_filename = original_filename
@@ -242,9 +270,11 @@ def toggle_skill(tree, progression_key):
         flash("Unrecognized skill progression.")
         return redirect(url_for("profile.profile"))
 
-    row = SkillProgress.query.filter_by(tree=tree, progression_key=progression_key).first()
+    row = SkillProgress.query.filter_by(
+        user_id=current_user.id, tree=tree, progression_key=progression_key
+    ).first()
     if row is None:
-        row = SkillProgress(tree=tree, progression_key=progression_key, unlocked=False)
+        row = SkillProgress(user_id=current_user.id, tree=tree, progression_key=progression_key, unlocked=False)
         db.session.add(row)
 
     row.unlocked = not row.unlocked
@@ -259,9 +289,9 @@ def toggle_badge(badge_key):
         flash("Unrecognized badge.")
         return redirect(url_for("profile.profile"))
 
-    row = ComboBadgeProgress.query.filter_by(badge_key=badge_key).first()
+    row = ComboBadgeProgress.query.filter_by(user_id=current_user.id, badge_key=badge_key).first()
     if row is None:
-        row = ComboBadgeProgress(badge_key=badge_key, unlocked=False)
+        row = ComboBadgeProgress(user_id=current_user.id, badge_key=badge_key, unlocked=False)
         db.session.add(row)
 
     row.unlocked = not row.unlocked
@@ -281,9 +311,9 @@ def log_pr(badge_key):
         flash("Enter a whole number of reps.")
         return redirect(url_for("profile.profile"))
 
-    row = ComboBadgeProgress.query.filter_by(badge_key=badge_key).first()
+    row = ComboBadgeProgress.query.filter_by(user_id=current_user.id, badge_key=badge_key).first()
     if row is None:
-        row = ComboBadgeProgress(badge_key=badge_key, unlocked=False)
+        row = ComboBadgeProgress(user_id=current_user.id, badge_key=badge_key, unlocked=False)
         db.session.add(row)
 
     row.rep_pr = int(raw)

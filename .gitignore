@@ -20,3 +20,4 @@ backend/models/*.task
 
 # Claude Code local config/plugins - not part of the app
 .claude/
+backend/data/app.db.bak*

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Log in - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Welcome&nbsp;back</p>
+<h1 class="display">LOG&nbsp;IN</h1>
+<p class="subtitle">Log in to your HOLDFAST account.</p>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel auth-panel">
+  <form action="{{ url_for('auth.login') }}" method="post" class="auth-form">
+    <label>Email
+      <input type="email" name="email" value="{{ email or '' }}" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" required>
+    </label>
+    <button type="submit" class="btn btn-primary">Log in</button>
+  </form>
+  <p class="auth-switch">No account yet? <a href="{{ url_for('auth.signup') }}">Sign up</a></p>
+</section>
+{% endblock %}

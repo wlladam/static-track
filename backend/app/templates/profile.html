@@ -1,9 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Athlete Profile - HOLDFAST{% endblock %}
+{% block title %}{{ "Athlete Profile" if not read_only else viewing_label ~ "'s Profile" }} - HOLDFAST{% endblock %}
 {% block content %}
-<p class="eyebrow">Warrior&nbsp;Profile</p>
-<h1 class="display">ATHLETE&nbsp;PROFILE</h1>
-<p class="subtitle">Your stats, your skill trees, your earned badges - tracked separately from your analyzed sessions.</p>
+{% if read_only %}
+  <p class="eyebrow"><a href="{{ url_for('friends.friends') }}" class="back-link">&larr; Friends</a></p>
+  <h1 class="display">VIEWING&nbsp;{{ viewing_label|upper }}&rsquo;S&nbsp;PROFILE</h1>
+  <p class="subtitle">Read-only - stats, skill trees, and badges as {{ viewing_label }} has them tracked.</p>
+{% else %}
+  <p class="eyebrow">Warrior&nbsp;Profile</p>
+  <h1 class="display">ATHLETE&nbsp;PROFILE</h1>
+  <p class="subtitle">Your stats, your skill trees, your earned badges - tracked separately from your analyzed sessions.</p>
+{% endif %}
 
 <div style="height: 1.5rem"></div>
 
@@ -15,6 +21,7 @@
     <div class="showcase-hero-meta">
       <p class="panel-title"><span class="dot"></span>Best&nbsp;combo</p>
       {% if athlete.showcase_caption %}<p class="showcase-caption">{{ athlete.showcase_caption }}</p>{% endif %}
+      {% if not read_only %}
       <div class="showcase-hero-actions">
         <details class="showcase-replace">
           <summary class="btn btn-secondary">Replace clip</summary>
@@ -29,6 +36,12 @@
           <button type="submit" class="btn btn-secondary">Delete</button>
         </form>
       </div>
+      {% endif %}
+    </div>
+  {% elif read_only %}
+    <div class="showcase-hero-empty">
+      <p class="showcase-empty-title">No showcase clip yet</p>
+      <p class="subtitle" style="margin: 0;">{{ viewing_label }} hasn't uploaded a highlight clip.</p>
     </div>
   {% else %}
     <div class="showcase-hero-empty">
@@ -75,6 +88,7 @@
     <div class="profile-stat"><span class="profile-stat-label">Best training time</span><span class="profile-stat-value profile-stat-value-text">{{ athlete.preferred_training_time or "—" }}</span></div>
   </div>
 
+  {% if not read_only %}
   <details class="profile-edit">
     <summary>Edit profile</summary>
     <form action="{{ url_for('profile.update') }}" method="post" class="profile-edit-form">
@@ -111,6 +125,7 @@
       <button type="submit" class="btn btn-primary">Save profile</button>
     </form>
   </details>
+  {% endif %}
 </section>
 
 {% for tree in trees %}
@@ -120,11 +135,17 @@
     {% for node in tree.nodes %}
       {% if not loop.first %}<div class="skill-tree-connector {{ 'is-unlocked' if node.status == 'unlocked' or tree.nodes[loop.index0 - 1].status == 'unlocked' }}"></div>{% endif %}
       <div class="skill-node skill-node-{{ node.status }}">
+        {% if read_only %}
+          <span class="skill-badge skill-badge-{{ node.tier }} skill-badge-{{ node.status }}" title="{{ 'Unlocked ' + node.date_achieved.strftime('%Y-%m-%d') if node.date_achieved else '' }}">
+            <span class="skill-badge-icon">{{ tree.icon }}</span>
+          </span>
+        {% else %}
         <form action="{{ url_for('profile.toggle_skill', tree=tree.key, progression_key=node.key) }}" method="post">
           <button type="submit" class="skill-badge skill-badge-{{ node.tier }} skill-badge-{{ node.status }}" title="{{ 'Unlocked ' + node.date_achieved.strftime('%Y-%m-%d') if node.date_achieved else 'Click to mark as achieved' }}">
             <span class="skill-badge-icon">{{ tree.icon }}</span>
           </button>
         </form>
+        {% endif %}
         <p class="skill-node-label">{{ node.label }}</p>
         {% if node.status == "unlocked" %}
           <p class="skill-node-date">{{ node.date_achieved.strftime('%b %-d, %Y') if node.date_achieved else '' }}</p>
@@ -157,6 +178,7 @@
       {% if badge.unlocked %}
         <p class="combo-badge-date">Unlocked {{ badge.date_achieved.strftime('%b %-d, %Y') if badge.date_achieved else '' }}</p>
       {% endif %}
+      {% if not read_only %}
       <form action="{{ url_for('profile.log_pr', badge_key=badge.key) }}" method="post" class="combo-badge-pr-form">
         <input type="number" name="rep_pr" min="1" placeholder="Log rep PR" value="{{ badge.rep_pr or '' }}">
         <button type="submit" class="btn btn-primary">Log</button>
@@ -164,6 +186,7 @@
       <form action="{{ url_for('profile.toggle_badge', badge_key=badge.key) }}" method="post">
         <button type="submit" class="combo-badge-toggle">{{ "Lock badge" if badge.unlocked else "Mark unlocked" }}</button>
       </form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

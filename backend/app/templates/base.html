@@ -12,11 +12,20 @@
 <body>
   <nav>
     <a class="brand" href="{{ url_for('main.index') }}">HOLDFAST</a>
-    <a class="nav-link {{ 'active' if request.endpoint == 'main.index' }}" href="{{ url_for('main.index') }}">Upload</a>
-    <a class="nav-link {{ 'active' if request.endpoint == 'main.history' }}" href="{{ url_for('main.history') }}">History</a>
-    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('goals.') }}" href="{{ url_for('goals.goals') }}">Goals</a>
-    <a class="nav-link nav-link-profile {{ 'active' if request.endpoint and request.endpoint.startswith('profile.') }}" href="{{ url_for('profile.profile') }}">Profile</a>
-    <a class="nav-link nav-link-duels {{ 'active' if request.endpoint and request.endpoint.startswith('duels.') }}" href="{{ url_for('duels.dashboard') }}">Duels</a>
+    {% if current_user.is_authenticated %}
+      <a class="nav-link {{ 'active' if request.endpoint == 'main.index' }}" href="{{ url_for('main.index') }}">Upload</a>
+      <a class="nav-link {{ 'active' if request.endpoint == 'main.history' }}" href="{{ url_for('main.history') }}">History</a>
+      <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('goals.') }}" href="{{ url_for('goals.goals') }}">Goals</a>
+      <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('friends.') }}" href="{{ url_for('friends.friends') }}">Friends</a>
+      <a class="nav-link nav-link-profile {{ 'active' if request.endpoint and request.endpoint.startswith('profile.') }}" href="{{ url_for('profile.profile') }}">Profile</a>
+      <span class="nav-user">{{ current_user.display_name }}</span>
+      <form action="{{ url_for('auth.logout') }}" method="post" class="nav-logout-form">
+        <button type="submit" class="nav-link nav-logout-btn">Log out</button>
+      </form>
+    {% else %}
+      <a class="nav-link {{ 'active' if request.endpoint == 'auth.login' }}" href="{{ url_for('auth.login') }}">Log in</a>
+      <a class="nav-link {{ 'active' if request.endpoint == 'auth.signup' }}" href="{{ url_for('auth.signup') }}">Sign up</a>
+    {% endif %}
   </nav>
   <main>
     {% with messages = get_flashed_messages() %}

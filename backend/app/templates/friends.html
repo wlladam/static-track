@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Friends - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Train&nbsp;together</p>
+<h1 class="display">FRIENDS</h1>
+<p class="subtitle">Find other athletes, connect, and see how they're progressing.</p>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Find&nbsp;athletes</p>
+  <form action="{{ url_for('friends.friends') }}" method="get" class="friend-search-form">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search by name&hellip;" maxlength="60">
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+
+  {% if searched %}
+    {% if search_results %}
+      <div class="friend-search-results">
+        {% for result in search_results %}
+          <div class="friend-search-row">
+            <div class="friend-avatar">{{ result.account.display_name[0]|upper }}</div>
+            <div class="friend-search-name">{{ result.account.display_name }}</div>
+            <div class="friend-search-action">
+              {% if result.status == 'friends' %}
+                <span class="friend-status-chip is-friends">Friends</span>
+              {% elif result.status == 'pending_outgoing' %}
+                <span class="friend-status-chip is-pending">Request sent</span>
+              {% elif result.status == 'pending_incoming' %}
+                <span class="friend-status-chip is-pending">Sent you a request</span>
+              {% else %}
+                <form action="{{ url_for('friends.send_request', target_id=result.account.id) }}" method="post">
+                  <input type="hidden" name="q" value="{{ query }}">
+                  <button type="submit" class="btn btn-primary">Add friend</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="subtitle" style="margin: 1rem 0 0;">No athletes found matching &ldquo;{{ query }}&rdquo;.</p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% if incoming %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Incoming&nbsp;requests</p>
+  <div class="friend-request-list">
+    {% for fr in incoming %}
+      <div class="friend-request-row">
+        <div class="friend-avatar">{{ fr.requester.display_name[0]|upper }}</div>
+        <div class="friend-search-name">{{ fr.requester.display_name }}</div>
+        <div class="friend-request-actions">
+          <form action="{{ url_for('friends.accept_request', friendship_id=fr.id) }}" method="post">
+            <button type="submit" class="btn btn-primary">Accept</button>
+          </form>
+          <form action="{{ url_for('friends.remove_friendship', friendship_id=fr.id) }}" method="post">
+            <button type="submit" class="btn btn-secondary">Decline</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if outgoing %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Outgoing&nbsp;requests</p>
+  <div class="friend-request-list">
+    {% for fr in outgoing %}
+      <div class="friend-request-row">
+        <div class="friend-avatar">{{ fr.addressee.display_name[0]|upper }}</div>
+        <div class="friend-search-name">{{ fr.addressee.display_name }}</div>
+        <div class="friend-request-actions">
+          <span class="friend-status-chip is-pending">Pending</span>
+          <form action="{{ url_for('friends.remove_friendship', friendship_id=fr.id) }}" method="post">
+            <button type="submit" class="btn btn-secondary">Cancel</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Your&nbsp;friends</p>
+  {% if friend_accounts %}
+    <div class="friend-card-grid">
+      {% for entry in friend_accounts %}
+        {% set a = entry.account %}
+        {% set h = entry.highlight %}
+        <a class="friend-card" href="{{ url_for('friends.view_friend_profile', account_id=a.id) }}">
+          <div class="friend-avatar friend-avatar-lg">{{ a.display_name[0]|upper }}</div>
+          <p class="friend-card-name">{{ a.display_name }}</p>
+          {% if h.experience_level %}
+            <span class="tier-chip tier-chip-{{ h.experience_level|lower }}">{{ h.experience_level }}</span>
+          {% endif %}
+          <p class="friend-card-stat">{{ h.total_unlocked }} badge{{ 's' if h.total_unlocked != 1 }} unlocked</p>
+          {% if h.most_recent_unlock %}
+            <p class="friend-card-recent">Latest: {{ h.most_recent_unlock.label }}</p>
+          {% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="friends-empty-state">
+      <p class="goals-empty-title">No friends yet</p>
+      <p class="subtitle" style="margin: 0;">Search for an athlete above and send your first friend request.</p>
+    </div>
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -12,6 +12,7 @@ import calendar
 from datetime import date, datetime, timezone
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
 from app.models import (
     COMBO_BADGE_FAMILIES,
@@ -29,11 +30,14 @@ bp = Blueprint("goals", __name__, url_prefix="/goals")
 
 
 def _skill_progress_map() -> dict:
-    return {(row.tree, row.progression_key): row for row in SkillProgress.query.all()}
+    return {
+        (row.tree, row.progression_key): row
+        for row in SkillProgress.query.filter_by(user_id=current_user.id).all()
+    }
 
 
 def _combo_progress_map() -> dict:
-    return {row.badge_key: row for row in ComboBadgeProgress.query.all()}
+    return {row.badge_key: row for row in ComboBadgeProgress.query.filter_by(user_id=current_user.id).all()}
 
 
 def _sync_goal_completions(skill_progress: dict, combo_progress: dict) -> None:
@@ -43,7 +47,7 @@ def _sync_goal_completions(skill_progress: dict, combo_progress: dict) -> None:
     "mark complete" step, since the unlock IS the completion.
     """
     changed = False
-    for goal in SkillGoal.query.filter_by(status="active").all():
+    for goal in SkillGoal.query.filter_by(user_id=current_user.id, status="active").all():
         if goal.kind == "skill":
             row = skill_progress.get((goal.tree_key, goal.progression_key))
         else:
@@ -63,12 +67,10 @@ def _closest_attempt_summary(tree_key: str, progressions: list) -> dict | None:
     good am I at the hardest thing I've actually tried toward this goal."
     """
     keys_order = [p["key"] for p in progressions]
-    # is_duel_submission=False: a duel clip (or synthetic bot clip) isn't a
-    # tracked training session - see Attempt.is_duel_submission.
     attempts = [
         a
         for a in Attempt.query.filter_by(
-            movement_type="static_hold", move_type=tree_key, is_duel_submission=False
+            user_id=current_user.id, movement_type="static_hold", move_type=tree_key
         ).all()
         if a.progression in keys_order
     ]
@@ -215,8 +217,16 @@ def goals():
     skill_progress = _skill_progress_map()
     combo_progress = _combo_progress_map()
 
-    active_rows = SkillGoal.query.filter_by(status="active").order_by(SkillGoal.created_at.asc()).all()
-    completed_rows = SkillGoal.query.filter_by(status="completed").order_by(SkillGoal.completed_at.desc()).all()
+    active_rows = (
+        SkillGoal.query.filter_by(user_id=current_user.id, status="active")
+        .order_by(SkillGoal.created_at.asc())
+        .all()
+    )
+    completed_rows = (
+        SkillGoal.query.filter_by(user_id=current_user.id, status="completed")
+        .order_by(SkillGoal.completed_at.desc())
+        .all()
+    )
 
     active_goals = [v for v in (_build_goal_view(g, skill_progress, combo_progress) for g in active_rows) if v]
     completed_goals = [v for v in (_build_goal_view(g, skill_progress, combo_progress) for g in completed_rows) if v]
@@ -230,7 +240,7 @@ def goals():
     target_groups = _available_targets(skill_progress, combo_progress, existing_targets)
 
     today = date.today()
-    all_events = Event.query.order_by(Event.event_date.asc()).all()
+    all_events = Event.query.filter_by(user_id=current_user.id).order_by(Event.event_date.asc()).all()
 
     def event_view(e):
         return {
@@ -281,6 +291,7 @@ def create_goal():
             return redirect(url_for("goals.goals"))
 
     goal = SkillGoal(
+        user_id=current_user.id,
         kind=parsed["kind"],
         tree_key=parsed["tree_key"],
         progression_key=parsed["progression_key"],
@@ -292,7 +303,9 @@ def create_goal():
     db.session.flush()
 
     if request.form.get("is_primary") == "on":
-        SkillGoal.query.filter(SkillGoal.id != goal.id).update({"is_primary": False})
+        SkillGoal.query.filter(SkillGoal.user_id == current_user.id, SkillGoal.id != goal.id).update(
+            {"is_primary": False}
+        )
         goal.is_primary = True
 
     db.session.commit()
@@ -303,11 +316,11 @@ def create_goal():
 @bp.route("/<int:goal_id>/primary", methods=["POST"])
 def set_primary(goal_id):
     goal = db.session.get(SkillGoal, goal_id)
-    if goal is None or goal.status != "active":
+    if goal is None or goal.user_id != current_user.id or goal.status != "active":
         flash("Unrecognized goal.")
         return redirect(url_for("goals.goals"))
 
-    SkillGoal.query.update({"is_primary": False})
+    SkillGoal.query.filter_by(user_id=current_user.id).update({"is_primary": False})
     goal.is_primary = True
     db.session.commit()
     return redirect(url_for("goals.goals"))
@@ -316,7 +329,7 @@ def set_primary(goal_id):
 @bp.route("/<int:goal_id>/note", methods=["POST"])
 def update_note(goal_id):
     goal = db.session.get(SkillGoal, goal_id)
-    if goal is None:
+    if goal is None or goal.user_id != current_user.id:
         flash("Unrecognized goal.")
         return redirect(url_for("goals.goals"))
 
@@ -328,7 +341,7 @@ def update_note(goal_id):
 @bp.route("/<int:goal_id>/delete", methods=["POST"])
 def delete_goal(goal_id):
     goal = db.session.get(SkillGoal, goal_id)
-    if goal is not None:
+    if goal is not None and goal.user_id == current_user.id:
         db.session.delete(goal)
         db.session.commit()
     return redirect(url_for("goals.goals"))
@@ -349,6 +362,7 @@ def create_event():
         return redirect(url_for("goals.goals"))
 
     event = Event(
+        user_id=current_user.id,
         name=name,
         event_date=event_date,
         location=request.form.get("location", "").strip() or None,
@@ -356,7 +370,9 @@ def create_event():
     )
     goal_ids = [gid for gid in request.form.getlist("goal_ids") if gid.isdigit()]
     if goal_ids:
-        event.goals = SkillGoal.query.filter(SkillGoal.id.in_(goal_ids)).all()
+        event.goals = SkillGoal.query.filter(
+            SkillGoal.id.in_(goal_ids), SkillGoal.user_id == current_user.id
+        ).all()
 
     db.session.add(event)
     db.session.commit()
@@ -367,7 +383,7 @@ def create_event():
 @bp.route("/events/<int:event_id>/delete", methods=["POST"])
 def delete_event(event_id):
     event = db.session.get(Event, event_id)
-    if event is not None:
+    if event is not None and event.user_id == current_user.id:
         db.session.delete(event)
         db.session.commit()
     return redirect(url_for("goals.goals"))
