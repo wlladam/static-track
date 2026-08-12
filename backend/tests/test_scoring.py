@@ -50,6 +50,23 @@ def test_full_lockout_scores_high():
     assert result.confidence == "high"
 
 
+def test_near_lockout_no_longer_scores_a_flat_100():
+    # A real full front lever clip measured ~166 degrees (a genuinely good,
+    # not-quite-perfect lockout) and used to score a flat 100 here, since
+    # the old practical reference (165) doubled as a hard ceiling - any
+    # angle at or above it maxed out, with no way to tell 166 from a
+    # literal 180. Recalibrated so this band actually differentiates
+    # (see PRACTICAL_LOCKOUT_REFERENCE_DEG's comment in scoring.py).
+    near_lockout = _pose(
+        left_elbow={"x": 0.30, "y": 0.31},
+        right_elbow={"x": 0.30, "y": 0.36},
+    )
+    result = score_arm_lockout(_records(near_lockout))
+
+    assert result.score < 98
+    assert result.label == "good lockout, slight bend"
+
+
 def test_bent_arm_scores_much_lower_than_straight_arm():
     bent = _pose(
         left_elbow={"x": 0.35, "y": 0.20},

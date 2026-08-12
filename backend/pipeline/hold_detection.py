@@ -52,6 +52,25 @@ Runs separated by only a short gap (a brief real tracking dropout mid-hold
 merged into one segment rather than reported as two, since a real clip
 showed exactly this: two fragments 1.4s apart that were actually one
 continuous ~10s hold.
+
+That gap-merge logic had its own real false positive: a full front lever
+clip where the athlete hung still for a moment before kipping up, briefly
+passed through a mid-swing pause, then locked into the actual hold - three
+separate stable-ish stretches, each under 2s apart, that the naive
+time-only gap check happily merged into one 8.7s "hold" spanning the
+pre-swing hang and the swing itself (duration_sec read 8.7s against a real
+hold of ~3.9s). The two gaps in that clip aren't ambiguous: the frames
+inside them are fully tracked (not occluded - a real dropout produces NO
+usable angle reading) and show the torso swinging through 44-75 degrees
+from horizontal, i.e. directly-observed evidence of a genuine transition
+movement, not a tracking gap. A real occlusion-driven gap never has this -
+by definition there's no confidently-tracked landmark data during a true
+dropout, so the frames read as unknown/fallback, not as a confidently-
+tracked large-angle reading. The merge check now looks at exactly that
+distinction: only bridge a gap if no frame inside it has a confidently-
+tracked orientation reading beyond MERGE_GAP_MAX_DEG_FROM_HORIZONTAL - a
+genuine dropout (no data) still merges as before; a genuine kip/swing
+(clearly-tracked, clearly non-horizontal) no longer does.
 """
 import math
 import statistics
@@ -75,6 +94,17 @@ HOLD_MAX_DEG_FROM_HORIZONTAL = 30.0
 HOLD_MAX_DEG_OVERHEAD_GRIP = 85.0
 OVERHEAD_GRIP_MARGIN = 0.02
 MERGE_GAP_SEC = 2.0
+
+# A gap between two candidate runs is only bridged if no frame inside it has
+# a confidently-tracked (non-None, i.e. not occluded) torso angle beyond
+# this. Set well above the standard 30-degree horizontal ceiling (and above
+# the tuck-adjacent 45-60 degree readings a compressed hold can produce - see
+# the transient-wobble case in tests/test_hold_detection.py) so it never
+# blocks a legitimate real hold's own mild angle noise, but comfortably below
+# the 44-75 degree readings a real mid-swing/kip transition produced in the
+# clip that motivated this check - a genuine transition is unambiguous once
+# you're actually looking at the tracked angle instead of just elapsed time.
+MERGE_GAP_MAX_DEG_FROM_HORIZONTAL = 40.0
 
 # A "touch" (front lever, planche, etc.) is a brief tap of the position and
 # release, never a sustained hold - DEFAULT_MIN_DURATION_SEC (1.0s) would
@@ -252,6 +282,37 @@ def _runs_from_flags(flags: list[bool]) -> list[tuple[int, int]]:
     return runs
 
 
+def _gap_has_confirmed_transition(
+    records: list[dict], gap_start: int, gap_end: int, merge_gap_max_deg: float, stability_threshold: float
+) -> bool:
+    """True if any frame strictly between gap_start and gap_end has BOTH a
+    confidently-tracked (non-None) torso angle beyond merge_gap_max_deg AND
+    real frame-to-frame displacement (actual physical movement, not just an
+    angle reading blip on an otherwise-still body) - direct evidence the
+    athlete moved through a genuinely non-horizontal posture, not just an
+    elapsed-time coincidence.
+
+    Both signals are required, not angle alone: a genuinely held (if
+    tucked/compressed) position can itself read 45-80 degrees from
+    horizontal for a real stretch (see module docstring) while the athlete
+    isn't actually moving - angle alone can't tell that apart from a swing
+    through the same numeric range. Requiring elevated displacement too is
+    what distinguishes them: a real kip/swing transition is both far from
+    horizontal AND physically moving; a held-but-off-axis position is far
+    from horizontal but essentially still. Frames with no reliable angle
+    reading (occlusion) never count either way - that's the ambiguous "real
+    dropout" case this check is deliberately designed to still let through.
+    """
+    for i in range(gap_start + 1, gap_end):
+        angle = _torso_angle_from_horizontal(records[i]["landmarks"])
+        if angle is None or angle <= merge_gap_max_deg:
+            continue
+        displacement = _frame_displacement(records[i - 1]["landmarks"], records[i]["landmarks"])
+        if displacement is not None and displacement > stability_threshold:
+            return True
+    return False
+
+
 def _stable_oriented_candidates(
     records: list[dict],
     stability_threshold: float,
@@ -260,6 +321,7 @@ def _stable_oriented_candidates(
     max_deg_overhead_grip: float,
     overhead_grip_margin: float,
     merge_gap_sec: float,
+    merge_gap_max_deg: float = MERGE_GAP_MAX_DEG_FROM_HORIZONTAL,
 ) -> list[HoldSegment]:
     """Shared candidate-finding logic behind detect_hold and detect_all_holds -
     every stable+oriented run at least min_duration_sec long, in chronological order.
@@ -283,7 +345,10 @@ def _stable_oriented_candidates(
     for start, end in runs[1:]:
         prev_start, prev_end = merged[-1]
         gap = records[start]["timestamp_sec"] - records[prev_end]["timestamp_sec"]
-        if gap <= merge_gap_sec:
+        bridgeable = gap <= merge_gap_sec and not _gap_has_confirmed_transition(
+            records, prev_end, start, merge_gap_max_deg, stability_threshold
+        )
+        if bridgeable:
             merged[-1] = (prev_start, end)
         else:
             merged.append((start, end))
@@ -313,6 +378,7 @@ def detect_hold(
     max_deg_overhead_grip: float = HOLD_MAX_DEG_OVERHEAD_GRIP,
     overhead_grip_margin: float = OVERHEAD_GRIP_MARGIN,
     merge_gap_sec: float = MERGE_GAP_SEC,
+    merge_gap_max_deg: float = MERGE_GAP_MAX_DEG_FROM_HORIZONTAL,
 ) -> Optional[HoldSegment]:
     """Finds the longest window that is both stable (by joint displacement)
     and roughly horizontal (by orientation, frame-by-frame after smoothing)
@@ -330,6 +396,7 @@ def detect_hold(
         max_deg_overhead_grip,
         overhead_grip_margin,
         merge_gap_sec,
+        merge_gap_max_deg,
     )
     if not candidates:
         return None
@@ -344,6 +411,7 @@ def detect_all_holds(
     max_deg_overhead_grip: float = HOLD_MAX_DEG_OVERHEAD_GRIP,
     overhead_grip_margin: float = OVERHEAD_GRIP_MARGIN,
     merge_gap_sec: float = COMBO_MERGE_GAP_SEC,
+    merge_gap_max_deg: float = MERGE_GAP_MAX_DEG_FROM_HORIZONTAL,
 ) -> list[HoldSegment]:
     """Finds every stable+oriented segment in the clip, in chronological
     order - for combo clips with multiple holds/touches back to back, where
@@ -364,4 +432,5 @@ def detect_all_holds(
         max_deg_overhead_grip,
         overhead_grip_margin,
         merge_gap_sec,
+        merge_gap_max_deg,
     )

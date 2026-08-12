@@ -58,11 +58,30 @@ SCAPULAR_POSITION_NOTE = (
 # form (a 30+ degree bend, genuine multi-tenths hip sag) clearly penalized -
 # see PRACTICAL_LOCKOUT_REFERENCE_DEG / PRACTICAL_HIP_ALIGNMENT_REFERENCE and
 # the reduced per-unit penalties below.
-PRACTICAL_LOCKOUT_REFERENCE_DEG = 165.0  # elbow angle real excellent form measures at, not 180
+# PRACTICAL_LOCKOUT_REFERENCE_DEG was originally 165.0, chosen as "what real
+# excellent form measures at". That reference doubled as a hard ceiling
+# (anything >= it scored a flat 100), which meant every clip in the
+# 165-170 degree range - a real, meaningfully-sized band, not measurement
+# noise - scored identically to a hypothetical perfect 180 degree lockout.
+# A real full front lever clip (166.0 degrees, median-tracked) came back
+# 96.6/100 overall as a result, which read as too generous once actually
+# compared side by side against the source footage (independently judged
+# closer to 92) - the ceiling was doing the over-crediting, not a bug in
+# any single criterion. Raised to 175.0 so the 165-170 band (and the few
+# degrees past it) still separates on a genuine lockout difference instead
+# of flatlining; still well short of the literal 180 ideal this system
+# deliberately moved away from, and still gives a real ~170 degree lockout
+# (the best angle across every real sample clip on hand) a high-90s score,
+# not a punishing one. HOLD_STABILITY_SCALE bumped proportionally (+15%)
+# for the same reason - both were re-checked across every real sample clip
+# on hand (see the sweep in git history / conversation) to confirm this
+# shifts scores down a modest, consistent amount without collapsing any
+# clip's relative ranking or its qualitative label.
+PRACTICAL_LOCKOUT_REFERENCE_DEG = 175.0  # elbow angle a genuinely excellent lockout measures at
 ARM_LOCKOUT_DEG_PENALTY = 1.0  # points lost per degree of elbow bend below the practical reference
 STRAIGHT_BODY_LINE_DEVIATION_THRESHOLD = 0.04  # was 0.03 - see recalibration note above
 HIP_ALIGNMENT_DEVIATION_PENALTY = 175.0  # points lost per unit of normalized hip deviation
-HOLD_STABILITY_SCALE = 40.0  # points lost per multiple of DEFAULT_STABILITY_THRESHOLD
+HOLD_STABILITY_SCALE = 46.0  # points lost per multiple of DEFAULT_STABILITY_THRESHOLD
 LOW_CONFIDENCE_VISIBILITY_FLOOR = 0.6
 
 

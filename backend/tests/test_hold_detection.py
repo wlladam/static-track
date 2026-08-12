@@ -162,6 +162,37 @@ def test_rejects_stable_but_vertical_standing_pose():
     assert segment is None
 
 
+def test_gap_with_a_real_swing_is_not_merged_across():
+    # Mirrors a real bug: a full front lever clip where the athlete hung
+    # still, kipped up through a genuine swing (large displacement AND a
+    # torso angle far from horizontal - directly observed motion, not just
+    # a tracking blip), then locked into the actual hold. The old
+    # time-only merge gap fused all three stretches into one 8.7s "hold"
+    # against a real ~3.9s hold. Two separate horizontal-and-still clusters
+    # bridged by a genuinely moving, genuinely non-horizontal swing must
+    # stay two candidates, and detect_hold must pick the real (longer) one.
+    def interp(a, b, t):
+        return {joint: (a[joint][0] + (b[joint][0] - a[joint][0]) * t, a[joint][1] + (b[joint][1] - a[joint][1]) * t) for joint in a}
+
+    pre_hang = BASE_POSITIONS  # already horizontal-ish, per module fixture
+    swing_peak = STANDING_POSITIONS  # far from horizontal
+    real_hold = _shift(BASE_POSITIONS, 0.05, 0.0)
+
+    positions = (
+        [pre_hang] * 4  # brief still moment before the kip (short - below min_duration on its own)
+        + [interp(pre_hang, swing_peak, f) for f in (0.3, 0.6, 0.9, 1.0, 0.7, 0.4, 0.1)]  # real swing
+        + [_shift(real_hold, 0.001 * ((-1) ** i), 0.0) for i in range(8)]  # the actual hold
+    )
+    records = [_record(i, pos) for i, pos in enumerate(positions)]
+
+    segment = detect_hold(records)
+
+    assert segment is not None
+    # The picked segment must be the real trailing hold, not something that
+    # reaches back across the swing into the pre-kip stretch.
+    assert segment.start_frame_index >= 11
+
+
 def test_detect_all_holds_finds_multiple_combo_moves_in_order():
     # Two separate stable stretches (e.g. a tuck hold, then later a full
     # hold), with a clear transition ("jump") between them - a combo clip.
