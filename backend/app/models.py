@@ -40,30 +40,6 @@ class User(UserMixin, db.Model):
     def check_password(self, raw_password: str) -> bool:
         return check_password_hash(self.password_hash, raw_password)
 
-# Progress-over-time was misleading without this: a 95 on a tuck (the
-# easiest progression) and a 90 on a full front lever (a much harder one)
-# plotted the full-lever session as "worse" even though moving to a harder
-# progression at all is real progress. These multipliers scale the raw form
-# score by how hard the achieved progression is, so the trend line reflects
-# overall training progress rather than only form quality within whatever
-# single progression happened to be attempted that session.
-#
-# Ordering (tuck < advanced_tuck < straddle < full < one_arm) matches the
-# standard calisthenics front-lever/planche progression sequence. The
-# specific multiplier values are a v1 heuristic (same status as the other
-# not-yet-broadly-validated thresholds in this codebase, e.g.
-# variant_classification.py's STRAIGHT_LEG_KNEE_ANGLE) - there's no
-# established numeric standard to ground them in, only the widely-agreed
-# relative ordering, so they're spaced to preserve that ordering rather than
-# picked to hit a specific target number.
-PROGRESSION_DIFFICULTY_MULTIPLIER = {
-    "tuck": 1.0,
-    "advanced_tuck": 1.15,
-    "straddle": 1.3,
-    "full": 1.5,
-    "one_arm": 2.0,
-}
-
 
 class Attempt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -151,17 +127,28 @@ class Attempt(db.Model):
         return f"{self.move_type.replace('_', ' ')} ({self.progression.replace('_', ' ')})"
 
     @property
-    def difficulty_adjusted_score(self):
-        """overall_score scaled by how hard the achieved progression is -
-        see PROGRESSION_DIFFICULTY_MULTIPLIER. Can exceed 100 for a strong
-        score on a hard progression; that's intentional (it's a training-
-        progress metric, not a percentage) - callers that chart it need to
-        size their axis accordingly rather than clamping to 100.
+    def difficulty_points(self):
+        """0-100 difficulty rating for this attempt's specific movement -
+        see difficulty_scaler.py for the full research-grounded model.
+        None for combos (no single movement to rate) and errored/
+        undetected attempts.
         """
-        if self.overall_score is None:
-            return None
-        multiplier = PROGRESSION_DIFFICULTY_MULTIPLIER.get(self.progression, 1.0)
-        return round(self.overall_score * multiplier, 1)
+        from app.difficulty_scaler import difficulty_points_for_attempt
+
+        return difficulty_points_for_attempt(self)
+
+    @property
+    def difficulty_scaler_score(self):
+        """overall_score weighted by this attempt's Difficulty Scaler
+        points (see difficulty_scaler.py) - the successor to the old flat
+        progression-only "difficulty-adjusted score". Can exceed 100 for a
+        strong score on a hard movement; that's intentional (it's a
+        training-progress metric, not a percentage) - callers that chart
+        it need to size their axis accordingly rather than clamping to 100.
+        """
+        from app.difficulty_scaler import difficulty_scaler_score
+
+        return difficulty_scaler_score(self.overall_score, self.difficulty_points)
 
     @property
     def movement_family(self):
@@ -194,6 +181,57 @@ class Attempt(db.Model):
         if self.movement_type == "dynamic_reps" and self.exercise_type:
             return f"dynamic:{self.exercise_type}:{self.progression or 'none'}"
         return None
+
+
+# ============================================================
+# Personal Records - tracks each athlete's best-ever Difficulty Scaler
+# score per movement (see app/difficulty_scaler.py), and logs every
+# record-breaking moment so it stays visible later, not just as a one-time
+# animation. Two tables, deliberately: PersonalRecord holds only the
+# CURRENT best per movement (fast to look up when checking a new attempt),
+# while PrEvent is an append-only log of every PR moment - a movement can
+# be PR'd multiple times over an athlete's history, and each one is a real
+# moment worth keeping, not just overwritten.
+# ============================================================
+
+
+class PersonalRecord(db.Model):
+    """The current best-ever Difficulty Scaler score for one (user,
+    movement) pair. Checked/updated on every newly analyzed attempt - see
+    app/routes.py's upload().
+    """
+
+    __table_args__ = (db.UniqueConstraint("user_id", "movement_key", name="uq_personal_record_user_movement"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    movement_key = db.Column(db.String, nullable=False)
+    movement_label = db.Column(db.String, nullable=False)
+    best_scaler_score = db.Column(db.Float, nullable=False)
+    best_attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=True)
+    achieved_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PrEvent(db.Model):
+    """One row per PR-breaking (or first-ever-attempt) moment - an
+    append-only log so a movement's earlier PRs stay visible in the
+    athlete's record history even after being beaten again by a later
+    session. `previous_best` is None for a movement's very first logged
+    attempt (technically a "PR" by default, but not a genuine improvement
+    over anything - see routes.py's upload() for why that's shown as a
+    simpler acknowledgment rather than the full celebration).
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    attempt_id = db.Column(db.Integer, db.ForeignKey("attempt.id"), nullable=True)
+    movement_key = db.Column(db.String, nullable=False)
+    movement_label = db.Column(db.String, nullable=False)
+    new_score = db.Column(db.Float, nullable=False)
+    previous_best = db.Column(db.Float, nullable=True)
+    is_all_time = db.Column(db.Boolean, nullable=False, default=False)
+    is_first_attempt = db.Column(db.Boolean, nullable=False, default=False)
+    achieved_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ============================================================
@@ -263,8 +301,8 @@ class AthleteProfile(db.Model):
 
 
 # Ordered easiest -> hardest. Keys match Attempt.progression values used
-# elsewhere in the app (see PROGRESSION_DIFFICULTY_MULTIPLIER above) where a
-# shared step exists (tuck/advanced_tuck/straddle/full); "half_lay" is
+# elsewhere in the app (see app/difficulty_scaler.py's PROGRESSION_SCALE_FACTOR)
+# where a shared step exists (tuck/advanced_tuck/straddle/full); "half_lay" is
 # front-lever-specific (no planche equivalent) and isn't otherwise produced
 # by the analysis pipeline yet - it's here for the skill tree/badge system
 # only, tracked independent of any specific analyzed video.

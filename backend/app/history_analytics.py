@@ -9,7 +9,7 @@ fetch-filter-render layer.
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from app.models import PROGRESSION_DIFFICULTY_MULTIPLIER
+from app.difficulty_scaler import PROGRESSION_ORDER
 
 RANGE_OPTIONS = [
     ("7", "Last 7 days"),
@@ -28,7 +28,7 @@ SORT_OPTIONS = [
     ("date", "Date"),
     ("move", "Move"),
     ("score", "Score"),
-    ("diff", "Difficulty-adjusted"),
+    ("diff", "Difficulty Scaler"),
     ("duration", "Duration"),
 ]
 
@@ -38,10 +38,11 @@ GROUP_OPTIONS = [
     ("none", "Flat list"),
 ]
 
-# Ordered easiest -> hardest - reused from the scoring multiplier table so
-# the tier breakdown's column order always matches the actual progression
-# sequence rather than whatever order rows happen to appear in.
-TIER_ORDER = list(PROGRESSION_DIFFICULTY_MULTIPLIER.keys())
+# Ordered easiest -> hardest - reused from the Difficulty Scaler's own
+# canonical ordering so the tier breakdown's column order always matches
+# the actual progression sequence rather than whatever order rows happen
+# to appear in.
+TIER_ORDER = PROGRESSION_ORDER
 
 
 def filter_by_range(attempts, range_key):
@@ -85,10 +86,12 @@ def build_summary(attempts):
     labeled = [a.move_label for a in attempts if a.hold_detected and not a.is_combo]
 
     most_trained = Counter(labeled).most_common(1)
+    scaler_values = [a.difficulty_scaler_score for a in scored if a.difficulty_scaler_score is not None]
     return {
         "total_sessions": len(attempts),
         "current_streak": current_streak(attempts),
         "best_score": max((a.overall_score for a in scored), default=None),
+        "best_scaler": max(scaler_values, default=None),
         "most_trained_move": most_trained[0][0] if most_trained else None,
         "total_time_under_tension_sec": sum(durations) if durations else 0,
     }
@@ -202,7 +205,9 @@ def build_table_groups(all_attempts, visible_attempts, sort_key, sort_dir, group
     it - only the set of *visible* rows should shrink with filters, not
     what counts as a record.
     """
-    best_score_ever = max((a.overall_score for a in all_attempts if a.overall_score is not None), default=None)
+    best_scaler_ever = max(
+        (a.difficulty_scaler_score for a in all_attempts if a.difficulty_scaler_score is not None), default=None
+    )
     best_by_movement = {}
     for a in all_attempts:
         key = a.movement_key
@@ -226,7 +231,7 @@ def build_table_groups(all_attempts, visible_attempts, sort_key, sort_dir, group
         "date": lambda a: a.uploaded_at,
         "move": lambda a: a.move_label,
         "score": lambda a: a.overall_score if a.overall_score is not None else -1,
-        "diff": lambda a: a.difficulty_adjusted_score if a.difficulty_adjusted_score is not None else -1,
+        "diff": lambda a: a.difficulty_scaler_score if a.difficulty_scaler_score is not None else -1,
         "duration": lambda a: a.duration_sec if a.duration_sec is not None else -1,
     }
     rows.sort(key=sort_fns.get(sort_key, sort_fns["date"]), reverse=(sort_dir == "desc"))
@@ -237,7 +242,11 @@ def build_table_groups(all_attempts, visible_attempts, sort_key, sort_dir, group
         is_movement_pr = (
             a.movement_key is not None and metric is not None and best_by_movement.get(a.movement_key) == metric
         )
-        is_best_ever = a.overall_score is not None and best_score_ever is not None and a.overall_score == best_score_ever
+        is_best_ever = (
+            a.difficulty_scaler_score is not None
+            and best_scaler_ever is not None
+            and a.difficulty_scaler_score == best_scaler_ever
+        )
         annotated.append({"attempt": a, "is_movement_pr": is_movement_pr, "is_best_ever": is_best_ever})
 
     if group_by == "none":

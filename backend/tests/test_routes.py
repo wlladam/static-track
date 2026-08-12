@@ -181,7 +181,7 @@ def test_history_lists_attempts_and_renders_chart_with_two_scores(client, monkey
     assert b"80.0/100" in resp.data  # table row
     assert b"<svg" in resp.data  # chart renders once there are 2+ scored attempts
     assert b"Sessions logged" in resp.data
-    assert b"Best score ever" in resp.data
+    assert b"Best Difficulty Scaler" in resp.data
 
 
 def test_history_summary_stats_reflect_logged_sessions(client, monkeypatch):
@@ -250,6 +250,7 @@ def test_history_movement_drilldown_shows_prs(client, monkeypatch):
     fake_result = {
         "debug_overlay_path": None,
         "hold_detected": True,
+        "movement_type": "static_hold",
         "start_sec": 1.0,
         "end_sec": 4.0,
         "duration_sec": 3.0,
@@ -270,8 +271,8 @@ def test_history_movement_drilldown_shows_prs(client, monkeypatch):
 
     resp = client.get("/history")
     assert resp.status_code == 200
-    assert b"Best score" in resp.data
-    assert b"95.0" in resp.data
+    assert b"Best Difficulty Scaler" in resp.data
+    assert b"142.5" in resp.data  # 95.0 raw * 1.5x full front lever multiplier
 
 
 def test_history_table_sort_by_score_ascending(client, monkeypatch):

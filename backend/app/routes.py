@@ -1,14 +1,15 @@
 """View functions for the HOLDFAST web app."""
 import uuid
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, session, url_for
 from flask_login import current_user
 from werkzeug.utils import secure_filename
 
 from app import history_analytics
 from app.charts import build_dual_metric_chart_svg, build_trend_chart_svg
-from app.models import Attempt, db
+from app.models import Attempt, PrEvent, db
 from app.pipeline_runner import process_video
+from app.pr_tracking import record_attempt_and_check_pr
 
 bp = Blueprint("main", __name__)
 
@@ -74,6 +75,20 @@ def upload():
 
     db.session.add(attempt)
     db.session.commit()
+
+    # PR check happens right at analysis time (not lazily on the report
+    # page) so the record is durably logged the moment it happens - the
+    # celebration itself is deferred to the report page via the session
+    # (see below) since that's the natural point in the flow the athlete
+    # actually sees the result, per the feature's explicit "trigger right
+    # after analysis completes, not buried" requirement.
+    pr_result = record_attempt_and_check_pr(attempt)
+    # Always set (even to None) so a stale celebration from an earlier
+    # upload this session can never leak into this (possibly
+    # non-celebrating) report view - and tag it with the attempt id so it
+    # only ever shows on the exact report page that earned it.
+    session["pr_celebration"] = {**pr_result, "attempt_id": attempt.id} if pr_result else None
+
     return redirect(url_for("main.report", attempt_id=attempt.id))
 
 
@@ -82,12 +97,26 @@ def report(attempt_id):
     attempt = db.get_or_404(Attempt, attempt_id)
     if attempt.user_id != current_user.id:
         abort(404)
-    return render_template("report.html", attempt=attempt)
+    # Popped (not just read) so it only celebrates once - a refresh or
+    # revisit of this same report page later won't re-trigger it. Also
+    # only honored if it's tagged for *this* attempt, so it can never show
+    # up on the wrong report if the athlete navigates elsewhere first.
+    pr_celebration = session.pop("pr_celebration", None)
+    if pr_celebration and pr_celebration.get("attempt_id") != attempt_id:
+        pr_celebration = None
+    return render_template("report.html", attempt=attempt, pr_celebration=pr_celebration)
 
 
 @bp.route("/history")
 def history():
     all_attempts = Attempt.query.filter_by(user_id=current_user.id).order_by(Attempt.uploaded_at.asc()).all()
+
+    recent_pr_events = (
+        PrEvent.query.filter_by(user_id=current_user.id, is_first_attempt=False)
+        .order_by(PrEvent.achieved_at.desc())
+        .limit(10)
+        .all()
+    )
 
     range_key = request.args.get("range", "all")
     family_key = request.args.get("family", "all")
@@ -103,24 +132,30 @@ def history():
         summary["total_time_under_tension_sec"]
     )
 
+    # Difficulty Scaler is the primary progression metric (see
+    # app/difficulty_scaler.py) - it's what actually answers "am I getting
+    # genuinely stronger", so it's the main chart. Covers both static holds
+    # and dynamic/combo reps now (the old difficulty-adjusted chart only
+    # covered statics - the new scaler has real difficulty values for
+    # dynamic movements too).
+    scaler_points = [
+        (
+            a.uploaded_at,
+            a.difficulty_scaler_score,
+            f"{a.uploaded_at.strftime('%Y-%m-%d')}: {a.move_label} - {a.difficulty_scaler_score} scaler "
+            f"({a.overall_score}/100 raw)",
+        )
+        for a in filtered
+        if a.hold_detected and not a.is_combo and a.difficulty_scaler_score is not None
+    ]
+    scaler_chart_svg = build_trend_chart_svg(scaler_points, y_label="Difficulty Scaler", color_var="--cyan", fill_var="--cyan-soft")
+
     score_points = [
         (a.uploaded_at, a.overall_score, f"{a.uploaded_at.strftime('%Y-%m-%d')}: {a.move_label} - {a.overall_score}/100")
         for a in filtered
         if a.hold_detected and a.overall_score is not None
     ]
     score_chart_svg = build_trend_chart_svg(score_points, y_label="Score")
-
-    diff_points = [
-        (
-            a.uploaded_at,
-            a.difficulty_adjusted_score,
-            f"{a.uploaded_at.strftime('%Y-%m-%d')}: {a.move_label} - {a.difficulty_adjusted_score} adjusted "
-            f"({a.overall_score}/100 raw)",
-        )
-        for a in filtered
-        if a.hold_detected and not a.is_dynamic and a.difficulty_adjusted_score is not None
-    ]
-    difficulty_chart_svg = build_trend_chart_svg(diff_points, y_label="Difficulty-adjusted", color_var="--cyan", fill_var="--cyan-soft")
 
     tier_breakdown = history_analytics.progression_tier_breakdown(filtered)
 
@@ -132,8 +167,17 @@ def history():
         movement_attempts = [a for a in filtered if a.movement_key == selected_movement_key]
         movement_view = history_analytics.build_movement_view(movement_attempts, selected_movement_key)
         if movement_view:
-            score_pts = [
-                (a.uploaded_at, a.overall_score, f"{a.uploaded_at.strftime('%Y-%m-%d')}: {a.overall_score}/100 score")
+            # Difficulty Scaler, not raw score, is the primary ranking
+            # number in the per-movement view too - a movement's own
+            # difficulty is fixed, so this line is really "form quality
+            # over time on this exact move" without a raw/adjusted split
+            # to reconcile.
+            scaler_pts = [
+                (
+                    a.uploaded_at,
+                    a.difficulty_scaler_score,
+                    f"{a.uploaded_at.strftime('%Y-%m-%d')}: {a.difficulty_scaler_score} scaler ({a.overall_score}/100 raw)",
+                )
                 for a in movement_view["series"]
             ]
             if movement_view["is_dynamic"]:
@@ -147,7 +191,7 @@ def history():
                     for a in movement_view["series"]
                 ]
             movement_chart_svg = build_dual_metric_chart_svg(
-                score_pts, primary_pts, primary_label=movement_view["primary_metric_label"]
+                scaler_pts, primary_pts, primary_label=movement_view["primary_metric_label"]
             )
 
     sort_key = request.args.get("sort", "date")
@@ -169,10 +213,11 @@ def history():
 
     return render_template(
         "history.html",
+        recent_pr_events=recent_pr_events,
         attempts=filtered,
         summary=summary,
+        scaler_chart_svg=scaler_chart_svg,
         score_chart_svg=score_chart_svg,
-        difficulty_chart_svg=difficulty_chart_svg,
         tier_breakdown=tier_breakdown,
         movement_options=movement_options,
         selected_movement_key=selected_movement_key,

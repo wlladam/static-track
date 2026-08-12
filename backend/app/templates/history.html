@@ -42,8 +42,8 @@
     <p class="stat-callout-label">Current streak</p>
   </div>
   <div class="stat-callout">
-    <p class="stat-callout-value">{{ summary.best_score if summary.best_score is not none else '—' }}</p>
-    <p class="stat-callout-label">Best score ever</p>
+    <p class="stat-callout-value">{{ summary.best_scaler if summary.best_scaler is not none else '—' }}</p>
+    <p class="stat-callout-label">Best Difficulty Scaler</p>
   </div>
   <div class="stat-callout">
     <p class="stat-callout-value stat-callout-value-text">{{ summary.most_trained_move or '—' }}</p>
@@ -55,27 +55,33 @@
   </div>
 </section>
 
-<section class="panel chart-panel">
-  <p class="panel-title"><span class="dot"></span>Score&nbsp;over&nbsp;time</p>
-  {% if score_chart_svg %}
-    <p class="subtitle" style="margin-top: -0.5rem;">Raw form score for every scored session. Hover or tap a point for the exact date, move, and score.</p>
-    {{ score_chart_svg | safe }}
-  {% else %}
-    <p class="subtitle" style="margin: 0;">Log at least two scored sessions to see a trend line here.</p>
-  {% endif %}
+{% if recent_pr_events %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Recent&nbsp;PRs</p>
+  <div class="pr-log">
+    {% for e in recent_pr_events %}
+      <div class="pr-log-row {{ 'is-all-time' if e.is_all_time }}">
+        <span class="pr-log-icon">{{ '★' if e.is_all_time else '↑' }}</span>
+        <span class="pr-log-move">{{ e.movement_label|capitalize }}</span>
+        <span class="pr-log-score">{{ e.new_score }}<small> (prev {{ e.previous_best }})</small></span>
+        <span class="pr-log-date">{{ e.achieved_at.strftime('%b %-d, %Y') }}</span>
+      </div>
+    {% endfor %}
+  </div>
 </section>
+{% endif %}
 
-<section class="panel chart-panel">
-  <p class="panel-title"><span class="dot"></span>Difficulty-adjusted&nbsp;progress</p>
+<section class="panel chart-panel scaler-primary-chart">
+  <p class="panel-title"><span class="dot"></span>Difficulty&nbsp;Scaler&nbsp;&mdash;&nbsp;progress&nbsp;over&nbsp;time</p>
   <p class="subtitle" style="margin-top: -0.5rem;">
-    Raw score scaled by how hard the progression was (tuck &lt; advanced tuck &lt; straddle &lt; full &lt; one-arm), so this
-    answers "am I getting genuinely stronger" rather than "did I score well on whatever I happened to attempt." Can
-    exceed 100 - that's a training-progress score, not a percentage.
+    Your raw form score weighted by how hard the movement actually is (see the Difficulty Scaler on any session
+    report) - this is the real answer to "am I getting genuinely stronger," since a harder move done well should
+    outrank an easy one done perfectly. Can exceed 100 - that's a training-progress number, not a percentage.
   </p>
-  {% if difficulty_chart_svg %}
-    {{ difficulty_chart_svg | safe }}
+  {% if scaler_chart_svg %}
+    {{ scaler_chart_svg | safe }}
   {% else %}
-    <p class="subtitle" style="margin: 0;">Log at least two static-hold sessions to see this chart.</p>
+    <p class="subtitle" style="margin: 0;">Log at least two scored sessions to see this chart.</p>
   {% endif %}
 
   {% if tier_breakdown %}
@@ -92,6 +98,16 @@
         </div>
       {% endfor %}
     </div>
+  {% endif %}
+</section>
+
+<section class="panel chart-panel">
+  <p class="panel-title"><span class="dot"></span>Raw&nbsp;form&nbsp;score</p>
+  {% if score_chart_svg %}
+    <p class="subtitle" style="margin-top: -0.5rem;">Form quality alone, no difficulty weighting - useful for spotting form regressions independent of what you attempted. Hover or tap a point for detail.</p>
+    {{ score_chart_svg | safe }}
+  {% else %}
+    <p class="subtitle" style="margin: 0;">Log at least two scored sessions to see a trend line here.</p>
   {% endif %}
 </section>
 
@@ -121,12 +137,12 @@
           {% if movement_view.best_primary_attempt %}<p class="movement-pr-date">{{ movement_view.best_primary_attempt.uploaded_at.strftime('%b %-d, %Y') }}</p>{% endif %}
         </div>
         <div class="movement-pr">
-          <p class="movement-pr-value">{{ movement_view.best_score_attempt.overall_score if movement_view.best_score_attempt else '—' }}</p>
-          <p class="movement-pr-label">Best score</p>
+          <p class="movement-pr-value">{{ movement_view.best_score_attempt.difficulty_scaler_score if movement_view.best_score_attempt else '—' }}</p>
+          <p class="movement-pr-label">Best Difficulty Scaler</p>
           {% if movement_view.best_score_attempt %}<p class="movement-pr-date">{{ movement_view.best_score_attempt.uploaded_at.strftime('%b %-d, %Y') }}</p>{% endif %}
         </div>
         <div class="movement-pr">
-          <p class="movement-pr-value">{{ movement_view.most_recent.overall_score if movement_view.most_recent.overall_score is not none else '—' }}</p>
+          <p class="movement-pr-value">{{ movement_view.most_recent.difficulty_scaler_score if movement_view.most_recent.difficulty_scaler_score is not none else '—' }}</p>
           <p class="movement-pr-label">Most recent</p>
           <p class="movement-pr-date">{{ movement_view.most_recent.uploaded_at.strftime('%b %-d, %Y') }}</p>
         </div>
@@ -145,7 +161,7 @@
 
       {% if movement_chart_svg %}
         <div class="chart-legend">
-          <span class="chart-legend-item"><span class="chart-legend-swatch" style="background: var(--cyan)"></span>Score</span>
+          <span class="chart-legend-item"><span class="chart-legend-swatch" style="background: var(--cyan)"></span>Difficulty Scaler</span>
           <span class="chart-legend-item"><span class="chart-legend-swatch" style="background: var(--accent)"></span>{{ movement_view.primary_metric_label|capitalize }}</span>
         </div>
         {{ movement_chart_svg | safe }}
@@ -224,7 +240,7 @@
               <span class="score-badge pill-{{ a.overall_score|score_tier }}">{{ a.overall_score }}/100</span>
             {% else %}&mdash;{% endif %}
           </td>
-          <td>{% if not a.is_dynamic and a.difficulty_adjusted_score is not none %}{{ a.difficulty_adjusted_score }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if a.difficulty_scaler_score is not none %}{{ a.difficulty_scaler_score }}{% else %}&mdash;{% endif %}</td>
           <td>{% if a.duration_sec %}{{ '%.1f'|format(a.duration_sec) }}s{% else %}&mdash;{% endif %}</td>
         </tr>
       {% endfor %}

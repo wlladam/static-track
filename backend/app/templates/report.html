@@ -7,6 +7,32 @@
 
 <div style="height: 1.5rem"></div>
 
+{% if pr_celebration %}
+  {% if pr_celebration.is_pr and pr_celebration.is_all_time %}
+    <div class="pr-celebration pr-celebration-all-time" id="pr-celebration">
+      <div class="pr-confetti" aria-hidden="true">
+        {% for i in range(24) %}<span class="pr-confetti-piece pr-confetti-piece-{{ i % 6 }}"></span>{% endfor %}
+      </div>
+      <p class="pr-celebration-kicker">&#9733; All-time personal record &#9733;</p>
+      <p class="pr-celebration-headline">New PR! {{ pr_celebration.movement_label|capitalize }}</p>
+      <p class="pr-celebration-detail">
+        {{ pr_celebration.new_score }} <span class="pr-celebration-arrow">&uarr;</span> previous best: {{ pr_celebration.previous_best }}
+      </p>
+      <p class="pr-celebration-sub">Your best session ever, across every move you track.</p>
+    </div>
+  {% elif pr_celebration.is_pr %}
+    <div class="pr-celebration pr-celebration-move" id="pr-celebration">
+      <p class="pr-celebration-kicker">New PR</p>
+      <p class="pr-celebration-headline">{{ pr_celebration.movement_label|capitalize }} &mdash; {{ pr_celebration.new_score }}</p>
+      <p class="pr-celebration-detail">Previous best: {{ pr_celebration.previous_best }}</p>
+    </div>
+  {% elif pr_celebration.is_first_attempt %}
+    <div class="pr-celebration pr-celebration-first">
+      <p class="pr-celebration-detail">First attempt logged for {{ pr_celebration.movement_label }} - {{ pr_celebration.new_score }}. Beat it next time for your first PR.</p>
+    </div>
+  {% endif %}
+{% endif %}
+
 {% if attempt.error %}
   <p class="banner banner-error">Something went wrong analyzing this video: {{ attempt.error }}</p>
 {% elif not attempt.hold_detected %}
@@ -84,6 +110,12 @@
         {% endif %}
         <div class="stat-label">Form score</div>
       </div>
+      {% if attempt.difficulty_scaler_score is not none %}
+      <div class="stat-block">
+        <div class="stat-value" data-tier="{{ attempt.overall_score|score_tier }}">{{ attempt.difficulty_scaler_score }}</div>
+        <div class="stat-label">Difficulty Scaler</div>
+      </div>
+      {% endif %}
     </div>
     {% if attempt.overall_confidence and attempt.overall_confidence != 'high' %}
       <p class="confidence-note {{ attempt.overall_confidence }}">&#9888; {{ attempt.overall_confidence }} confidence overall</p>
@@ -188,6 +220,13 @@
           <p class="confidence-note {{ attempt.overall_confidence }}">&#9888; {{ attempt.overall_confidence }} confidence overall</p>
         {% endif %}
       </div>
+      {% if attempt.difficulty_scaler_score is not none %}
+        <div class="scaler-card">
+          <p class="scaler-card-value">{{ attempt.difficulty_scaler_score }}</p>
+          <p class="scaler-card-label">Difficulty Scaler</p>
+          <p class="scaler-card-note">{{ attempt.overall_score }}/100 raw &times; {{ attempt.difficulty_points }}pt difficulty</p>
+        </div>
+      {% endif %}
     </div>
   </section>
 

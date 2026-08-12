@@ -71,12 +71,12 @@ class _FakeAttempt:
         return f"{self.move_type} ({self.progression})"
 
     @property
-    def difficulty_adjusted_score(self):
+    def difficulty_scaler_score(self):
         if self.overall_score is None:
             return None
-        from app.models import PROGRESSION_DIFFICULTY_MULTIPLIER
+        from app.difficulty_scaler import difficulty_points_for_attempt, difficulty_scaler_score
 
-        return round(self.overall_score * PROGRESSION_DIFFICULTY_MULTIPLIER.get(self.progression, 1.0), 1)
+        return difficulty_scaler_score(self.overall_score, difficulty_points_for_attempt(self))
 
 
 def _now():
