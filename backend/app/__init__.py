@@ -143,5 +143,33 @@ def create_app(db_path: Path = None, data_dir: Path = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        _ensure_new_columns()
 
     return app
+
+
+def _ensure_new_columns() -> None:
+    """db.create_all() only creates missing TABLES, never adds columns to a
+    table that already exists - so a brand-new column on an existing model
+    (like Attempt.is_ranked_clip, added for the Ranked Clip/Profile Rank
+    feature) silently never appears on a pre-existing database, whether
+    that's a developer's local SQLite file or the real production Postgres
+    instance. Patches that gap generically: for each (table, column, DDL)
+    below, add the column if it isn't already there. Safe to run on every
+    startup - the existence check makes it a no-op once the column exists.
+    """
+    from sqlalchemy import inspect, text
+
+    column_migrations = [
+        ("attempt", "is_ranked_clip", "ALTER TABLE attempt ADD COLUMN is_ranked_clip BOOLEAN NOT NULL DEFAULT FALSE"),
+    ]
+
+    inspector = inspect(db.engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, column, ddl in column_migrations:
+        if table not in existing_tables:
+            continue  # a fresh db.create_all() above already created it with every current column
+        existing_columns = {c["name"] for c in inspector.get_columns(table)}
+        if column not in existing_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text(ddl))

@@ -137,6 +137,12 @@ def test_toggle_skill_rejects_unknown_tree_or_progression(client):
 
 
 def test_log_pr_unlocks_badge_on_first_log(client, app):
+    # The /badge/<key>/pr route and ComboBadgeProgress still exist and
+    # still work (Goals still targets these fine-grained keys) - only the
+    # Profile page's *display* changed: front_lever_pull_up's card no
+    # longer renders standalone there, since it's now shown as an
+    # auto-derived Trophy instead (see test_trophies.py). This test checks
+    # the underlying data, not profile.html rendering.
     resp = client.post("/profile/badge/front_lever_pull_up/pr", data={"rep_pr": "8"})
     assert resp.status_code == 302
 
@@ -146,9 +152,6 @@ def test_log_pr_unlocks_badge_on_first_log(client, app):
         assert row.rep_pr == 8
         assert row.unlocked is True
         assert row.date_achieved is not None
-
-    follow = client.get("/profile/")
-    assert b"PR: <strong>8</strong> reps" in follow.data
 
 
 def test_log_pr_updates_existing_pr_without_re_triggering_unlock_date(client, app):
@@ -183,9 +186,6 @@ def test_toggle_badge_manual_unlock_without_logging_a_pr(client, app):
         row = ComboBadgeProgress.query.filter_by(badge_key="planche_push_up").first()
         assert row.unlocked is True
 
-    follow = client.get("/profile/")
-    assert b"combo-badge-card is-unlocked" in follow.data or b'"combo-badge-card  is-unlocked"' in follow.data
-
 
 def test_toggle_badge_rejects_unknown_key(client):
     resp = client.post("/profile/badge/not_a_real_badge/toggle")
@@ -208,21 +208,20 @@ def test_profile_page_shows_showcase_empty_state_by_default(client):
 
 
 def test_profile_page_lists_expanded_badge_set_grouped_by_family(client):
+    # Restructured: the fine-grained per-tier COMBO_BADGES entries no
+    # longer render as individual cards - they're consolidated into
+    # auto-derived Trophies (bronze/silver/gold per movement, see
+    # test_trophies.py) plus the curated Skill Badges shelf. This test now
+    # checks the new section labels rather than the old per-tier badge names.
     resp = client.get("/profile/")
     assert resp.status_code == 200
-    for label in (
-        b"Touch Front Lever",
-        b"Straddle Planche Push-up",
-        b"Straddle Planche Raise",
-        b"Full Planche Raise",
-        b"Straddle Front Lever Pull-up",
-    ):
-        assert label in resp.data
-    assert b"Front Lever Combos" in resp.data
-    assert b"Planche Combos" in resp.data
-    # Pre-existing keys remain functional/present for backward compatibility.
+    assert b"Touch Front Lever" in resp.data  # standalone -> Skill Badges
+    assert b"Front Lever Trophies" in resp.data
+    assert b"Planche Trophies" in resp.data
     assert b"Front Lever Pull-up" in resp.data
     assert b"Planche Push-up" in resp.data
+    assert b"Front Lever Raise" in resp.data
+    assert b"Planche Raise" in resp.data
 
 
 def test_log_pr_works_for_a_new_badge(client, app):
@@ -236,7 +235,7 @@ def test_log_pr_works_for_a_new_badge(client, app):
         assert row.unlocked is True
 
     follow = client.get("/profile/")
-    assert b"PR: <strong>12</strong> reps" in follow.data
+    assert b"Touch Front Lever" in follow.data  # rendered via Skill Badges now, unlock state confirmed above
 
 
 def test_showcase_upload_shows_video_and_caption(client, app, tmp_path):

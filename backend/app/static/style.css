@@ -2766,3 +2766,340 @@ input[type="file"] { display: none; }
   font-size: 0.76rem;
   color: var(--text-muted);
 }
+
+/* ============================================================
+   Skill Badges (curated, one-time mastery shelf)
+   ============================================================ */
+
+.skill-badge-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.3rem;
+}
+
+.skill-badge-shelf-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.3rem;
+}
+
+.skill-badge-shelf-item form { margin: 0.3rem 0 0; }
+
+/* ============================================================
+   Trophies - tiered, hexagonal, deliberately distinct from the
+   circular Skill Badges above so the two categories read apart
+   at a glance without needing to read labels.
+   ============================================================ */
+
+.trophy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1.3rem;
+}
+
+.trophy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 1.6rem 1.2rem 1.3rem;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.trophy-card.is-unlocked {
+  border-color: rgba(255, 106, 43, 0.4);
+  background: linear-gradient(160deg, var(--bg-panel-2), rgba(255, 106, 43, 0.06));
+}
+
+.trophy-shape {
+  width: 5.4rem;
+  height: 5.4rem;
+  /* Shield silhouette - distinct from both the round Skill Badges and the
+     Elite hexagons this replaces, so "overall standing achievement" reads
+     as its own category. */
+  clip-path: polygon(50% 0%, 100% 20%, 100% 60%, 50% 100%, 0% 60%, 0% 20%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-strong);
+  font-size: 2rem;
+  color: var(--text-muted);
+}
+
+.trophy-shape-bronze { background: linear-gradient(165deg, #d69a5c, #8a5a2e); color: #1a0d05; border-color: transparent; }
+.trophy-shape-silver { background: linear-gradient(165deg, #e7ebf0, #9aa4b2); color: #1a0d05; border-color: transparent; }
+.trophy-shape-gold { background: linear-gradient(165deg, #ffe58a, #d4980f); color: #1a0d05; border-color: transparent; animation: elite-glow-gold 2.4s ease-in-out infinite; }
+
+.trophy-label {
+  font-weight: 700;
+  color: var(--text);
+  margin: 0.2rem 0 0;
+}
+
+.trophy-description {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.trophy-tier-ladder {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0;
+}
+
+.trophy-tier-pip {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+
+.trophy-tier-pip.is-locked { background: var(--bg-panel); }
+.trophy-tier-pip.is-unlocked.trophy-tier-pip-bronze { background: #d69a5c; border-color: #8a5a2e; }
+.trophy-tier-pip.is-unlocked.trophy-tier-pip-silver { background: #e7ebf0; border-color: #9aa4b2; }
+.trophy-tier-pip.is-unlocked.trophy-tier-pip-gold { background: #ffe58a; border-color: #d4980f; }
+
+.trophy-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0.2rem 0 0;
+}
+
+.trophy-status-locked { color: var(--text-muted); }
+
+/* ============================================================
+   Profile Rank - overall standing header, ranked-clip submission,
+   rank-up celebration, and the rank-themed skin applied to the
+   whole profile page content.
+   ============================================================ */
+
+.rank-header {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  padding: 1.6rem 1.8rem;
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  flex-wrap: wrap;
+}
+
+.rank-badge-shape {
+  width: 4.6rem;
+  height: 4.6rem;
+  flex: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  background: var(--bg-panel-2);
+  border: 2px solid var(--rank-accent, var(--accent));
+  color: var(--rank-accent, var(--accent));
+  box-shadow: 0 0 24px -6px var(--rank-accent, var(--accent));
+}
+
+.rank-header-body { flex: 1 1 260px; }
+
+.rank-header-tier {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+  color: var(--rank-accent, var(--accent));
+  margin: 0.1rem 0 0.3rem;
+}
+
+.rank-header-detail {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 0 0 0.6rem;
+}
+
+.rank-progress-track {
+  width: 100%;
+  max-width: 340px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  overflow: hidden;
+}
+
+.rank-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--rank-accent, var(--accent)), var(--rank-accent-strong, var(--accent-strong)));
+}
+
+.rank-header-next {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 0.4rem 0 0;
+}
+
+.rank-submit { flex: none; }
+.rank-submit summary { list-style: none; }
+.rank-submit summary::-webkit-details-marker { display: none; }
+
+.rank-submit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+  padding: 1rem;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 260px;
+}
+
+.rank-submit-field {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+/* ---------- rank-up celebration - same reveal/confetti language as
+   PR celebrations, distinct color so a rank-up never reads as "just
+   another PR". ---------- */
+
+.rank-celebration {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  border-radius: var(--radius);
+  padding: 2.2rem 1.6rem;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(160deg, var(--bg-panel), color-mix(in srgb, var(--rank-accent, var(--accent)) 22%, transparent), var(--cyan-soft));
+  border: 1px solid var(--rank-accent, var(--accent-strong));
+  box-shadow: 0 0 50px -8px var(--rank-accent, var(--accent));
+  animation: pr-reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rank-celebration-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rank-accent, var(--accent-strong));
+  margin: 0 0 0.5rem;
+}
+
+.rank-celebration-headline {
+  font-family: var(--font-display);
+  font-size: 2.8rem;
+  letter-spacing: 0.01em;
+  margin: 0;
+  background: linear-gradient(90deg, var(--rank-accent, var(--accent-strong)), var(--cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.rank-celebration-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0.6rem 0 0;
+}
+
+.rank-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rank-confetti-piece {
+  position: absolute;
+  top: -10%;
+  width: 8px;
+  height: 14px;
+  opacity: 0.9;
+  animation: pr-confetti-fall 2s ease-in var(--delay, 0s) 1 both;
+}
+
+.rank-confetti-piece-0 { left: 6%; --delay: 0s; background: var(--rank-accent, var(--accent)); }
+.rank-confetti-piece-1 { left: 20%; --delay: 0.1s; background: var(--cyan); }
+.rank-confetti-piece-2 { left: 34%; --delay: 0.03s; background: var(--score-high); }
+.rank-confetti-piece-3 { left: 50%; --delay: 0.16s; background: var(--rank-accent-strong, var(--accent-strong)); }
+.rank-confetti-piece-4 { left: 66%; --delay: 0.06s; background: var(--cyan); }
+.rank-confetti-piece-5 { left: 82%; --delay: 0.13s; background: var(--rank-accent, var(--accent)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rank-celebration { animation: none; }
+  .rank-confetti-piece { animation: none; display: none; }
+}
+
+/* ---------- rank-themed profile skin ----------
+   Layered on top of the base design system via a --rank-accent /
+   --rank-accent-strong pair scoped to .profile-rank-theme, so the header,
+   progress bar, and celebration above all pick up the right palette
+   without any base.html/global CSS changes. "unranked" (no ranked clip
+   submitted yet) intentionally uses the base app accent - no theme to
+   apply until there's a rank to show. */
+
+.profile-rank-theme-bronze {
+  --rank-accent: #c47a3d;
+  --rank-accent-strong: #e0995a;
+}
+
+.profile-rank-theme-silver {
+  --rank-accent: #b7c0cc;
+  --rank-accent-strong: #e5eaf0;
+}
+
+.profile-rank-theme-gold {
+  --rank-accent: #d4980f;
+  --rank-accent-strong: #ffd76a;
+}
+
+.profile-rank-theme-platinum {
+  --rank-accent: #4fa3a8;
+  --rank-accent-strong: #8fe0e6;
+}
+
+.profile-rank-theme-diamond {
+  --rank-accent: #4dd2e0;
+  --rank-accent-strong: #d6f9ff;
+}
+
+/* Champion - the most elevated treatment: black/gold, the only rank whose
+   header gets a gradient border and glow rather than a flat accent color. */
+.profile-rank-theme-champion {
+  --rank-accent: #ffd76a;
+  --rank-accent-strong: #fff3cf;
+}
+
+.profile-rank-theme-champion .rank-header {
+  background: linear-gradient(155deg, #0a0a0a, #1a1305 60%, #0a0a0a);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+
+.profile-rank-theme-champion .rank-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  padding: 1px;
+  background: linear-gradient(120deg, #ffd76a, #6b5210, #ffd76a);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.profile-rank-theme-champion .rank-badge-shape {
+  animation: diamond-glint 3s ease-in-out infinite;
+}

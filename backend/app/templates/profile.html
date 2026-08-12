@@ -1,59 +1,67 @@
 {% extends "base.html" %}
 {% block title %}{{ "Athlete Profile" if not read_only else viewing_label ~ "'s Profile" }} - HOLDFAST{% endblock %}
 {% block content %}
+<div class="profile-rank-theme profile-rank-theme-{{ rank.tier or 'unranked' }}">
+
 {% if read_only %}
   <p class="eyebrow"><a href="{{ url_for('friends.friends') }}" class="back-link">&larr; Friends</a></p>
   <h1 class="display">VIEWING&nbsp;{{ viewing_label|upper }}&rsquo;S&nbsp;PROFILE</h1>
-  <p class="subtitle">Read-only - stats, skill trees, and badges as {{ viewing_label }} has them tracked.</p>
+  <p class="subtitle">Read-only - stats, rank, skill trees, and badges as {{ viewing_label }} has them tracked.</p>
 {% else %}
   <p class="eyebrow">Warrior&nbsp;Profile</p>
   <h1 class="display">ATHLETE&nbsp;PROFILE</h1>
-  <p class="subtitle">Your stats, your skill trees, your earned badges - tracked separately from your analyzed sessions.</p>
+  <p class="subtitle">Your stats, your rank, your earned badges - tracked separately from your analyzed sessions.</p>
 {% endif %}
 
 <div style="height: 1.5rem"></div>
 
-<section class="showcase-hero">
-  {% if athlete.has_showcase %}
-    <div class="showcase-hero-video">
-      <video controls preload="metadata" class="video-frame" src="{{ url_for('profile.showcase_video') }}"></video>
-    </div>
-    <div class="showcase-hero-meta">
-      <p class="panel-title"><span class="dot"></span>Best&nbsp;combo</p>
-      {% if athlete.showcase_caption %}<p class="showcase-caption">{{ athlete.showcase_caption }}</p>{% endif %}
-      {% if not read_only %}
-      <div class="showcase-hero-actions">
-        <details class="showcase-replace">
-          <summary class="btn btn-secondary">Replace clip</summary>
-          <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
-            <label class="file-label" for="showcase-video-replace">Choose video file&hellip;</label>
-            <input type="file" name="video" id="showcase-video-replace" accept=".mp4,.mov,.m4v,.avi" required>
-            <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)" value="{{ athlete.showcase_caption or '' }}">
-            <button type="submit" class="btn btn-primary">Upload</button>
-          </form>
-        </details>
-        <form action="{{ url_for('profile.showcase_delete') }}" method="post">
-          <button type="submit" class="btn btn-secondary">Delete</button>
-        </form>
+{% if rank_celebration %}
+<section class="rank-celebration" id="rank-celebration">
+  <div class="rank-confetti" aria-hidden="true">
+    {% for i in range(28) %}<span class="rank-confetti-piece rank-confetti-piece-{{ i % 6 }}"></span>{% endfor %}
+  </div>
+  <p class="rank-celebration-kicker">Rank up</p>
+  <p class="rank-celebration-headline">{{ rank_celebration.previous_tier_label ~ ' → ' if rank_celebration.previous_tier_label }}{{ rank_celebration.new_tier_label }}</p>
+  <p class="rank-celebration-sub">Ranked clip scored {{ rank_celebration.score }} on the Difficulty Scaler - a new standing.</p>
+</section>
+{% endif %}
+
+<section class="rank-header rank-header-{{ rank.tier or 'unranked' }}">
+  <div class="rank-badge-shape">
+    <span class="rank-badge-icon">&#9670;</span>
+  </div>
+  <div class="rank-header-body">
+    <p class="panel-title"><span class="dot"></span>Profile&nbsp;Rank</p>
+    <p class="rank-header-tier">{{ rank.label }}</p>
+    {% if rank.best_score %}
+      <p class="rank-header-detail">Best ranked clip: {{ rank.best_score }} Difficulty Scaler &middot; {{ rank.ranked_clip_count }} ranked clip{{ "s" if rank.ranked_clip_count != 1 }} submitted</p>
+    {% else %}
+      <p class="rank-header-detail">No ranked clip submitted yet - submit one to earn your first rank.</p>
+    {% endif %}
+    {% if rank.next_label %}
+      <div class="rank-progress-track">
+        <div class="rank-progress-fill" style="width: {{ rank.progress_pct }}%"></div>
       </div>
-      {% endif %}
-    </div>
-  {% elif read_only %}
-    <div class="showcase-hero-empty">
-      <p class="showcase-empty-title">No showcase clip yet</p>
-      <p class="subtitle" style="margin: 0;">{{ viewing_label }} hasn't uploaded a highlight clip.</p>
-    </div>
-  {% else %}
-    <div class="showcase-hero-empty">
-      <p class="showcase-empty-title">Show off your best combo</p>
-      <p class="subtitle" style="margin: 0 0 1rem;">Upload a clip of your best move - a transition, a combo, whatever you're proudest of.</p>
-      <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
-        <label class="file-label" for="showcase-video-new">Choose video file&hellip;</label>
-        <input type="file" name="video" id="showcase-video-new" accept=".mp4,.mov,.m4v,.avi" required>
-        <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)">
-        <button type="submit" class="btn btn-primary">Upload clip</button>
-      </form>
-    </div>
+      <p class="rank-header-next">{{ rank.progress_pct }}% to {{ rank.next_label }} (needs {{ rank.next_threshold }})</p>
+    {% else %}
+      <p class="rank-header-next">Top rank reached.</p>
+    {% endif %}
+  </div>
+  {% if not read_only %}
+  <details class="rank-submit">
+    <summary class="btn btn-primary">Submit ranked clip</summary>
+    <form action="{{ url_for('main.rank_submit') }}" method="post" enctype="multipart/form-data" class="rank-submit-form">
+      <p class="subtitle" style="margin: 0 0 0.8rem;">A dedicated rank attempt - analyzed the same way as any upload, but only ranked clips count toward your Profile Rank.</p>
+      <div class="rank-submit-field">
+        <label><input type="radio" name="movement_type" value="static_hold" checked> Static hold</label>
+        <label><input type="radio" name="movement_type" value="dynamic_reps"> Dynamic reps</label>
+        <label><input type="radio" name="movement_type" value="combo"> Combo</label>
+      </div>
+      <label class="file-label" for="rank-clip-file">Choose video file&hellip;</label>
+      <input type="file" name="video" id="rank-clip-file" accept=".mp4,.mov,.m4v,.avi" required>
+      <button type="submit" class="btn btn-primary">Analyze &amp; submit</button>
+    </form>
+  </details>
   {% endif %}
 </section>
 
@@ -72,8 +80,8 @@
         <div class="tally-label">Skill badges</div>
       </div>
       <div class="tally-block">
-        <div class="tally-value">{{ unlocked_combo_badges }}<small>/{{ total_combo_badges }}</small></div>
-        <div class="tally-label">Elite badges</div>
+        <div class="tally-value">{{ unlocked_trophies }}<small>/{{ total_trophies }}</small></div>
+        <div class="tally-label">Trophies</div>
       </div>
     </div>
   </div>
@@ -128,6 +136,111 @@
   {% endif %}
 </section>
 
+<div style="height: 1.5rem"></div>
+
+<section class="showcase-hero">
+  {% if athlete.has_showcase %}
+    <div class="showcase-hero-video">
+      <video controls preload="metadata" class="video-frame" src="{{ url_for('profile.showcase_video') }}"></video>
+    </div>
+    <div class="showcase-hero-meta">
+      <p class="panel-title"><span class="dot"></span>Best&nbsp;combo</p>
+      {% if athlete.showcase_caption %}<p class="showcase-caption">{{ athlete.showcase_caption }}</p>{% endif %}
+      {% if not read_only %}
+      <div class="showcase-hero-actions">
+        <details class="showcase-replace">
+          <summary class="btn btn-secondary">Replace clip</summary>
+          <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
+            <label class="file-label" for="showcase-video-replace">Choose video file&hellip;</label>
+            <input type="file" name="video" id="showcase-video-replace" accept=".mp4,.mov,.m4v,.avi" required>
+            <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)" value="{{ athlete.showcase_caption or '' }}">
+            <button type="submit" class="btn btn-primary">Upload</button>
+          </form>
+        </details>
+        <form action="{{ url_for('profile.showcase_delete') }}" method="post">
+          <button type="submit" class="btn btn-secondary">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  {% elif read_only %}
+    <div class="showcase-hero-empty">
+      <p class="showcase-empty-title">No showcase clip yet</p>
+      <p class="subtitle" style="margin: 0;">{{ viewing_label }} hasn't uploaded a highlight clip.</p>
+    </div>
+  {% else %}
+    <div class="showcase-hero-empty">
+      <p class="showcase-empty-title">Show off your best combo</p>
+      <p class="subtitle" style="margin: 0 0 1rem;">Upload a clip of your best move - a transition, a combo, whatever you're proudest of.</p>
+      <form action="{{ url_for('profile.showcase_upload') }}" method="post" enctype="multipart/form-data" class="showcase-upload-form">
+        <label class="file-label" for="showcase-video-new">Choose video file&hellip;</label>
+        <input type="file" name="video" id="showcase-video-new" accept=".mp4,.mov,.m4v,.avi" required>
+        <input type="text" name="caption" maxlength="120" placeholder="Caption (optional)">
+        <button type="submit" class="btn btn-primary">Upload clip</button>
+      </form>
+    </div>
+  {% endif %}
+</section>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Skill&nbsp;Badges</p>
+  <p class="subtitle" style="margin: 0 0 1.3rem;">One-time mastery awards - unlocked the moment you achieve a hold at its hardest form.</p>
+  <div class="skill-badge-shelf">
+    {% for badge in skill_badges %}
+    <div class="skill-badge-shelf-item {{ 'is-unlocked' if badge.unlocked }}">
+      <span class="skill-badge skill-badge-{{ badge.tier }} skill-badge-{{ 'unlocked' if badge.unlocked else 'locked' }}">
+        <span class="skill-badge-icon">{{ badge.icon }}</span>
+      </span>
+      <p class="skill-node-label">{{ badge.label }}</p>
+      {% if badge.unlocked %}
+        <p class="skill-node-date">{{ badge.date_achieved.strftime('%b %-d, %Y') if badge.date_achieved else '' }}</p>
+      {% else %}
+        <p class="skill-node-status">Locked</p>
+      {% endif %}
+      {% if not read_only and badge.key in ("front_lever_touch",) %}
+        <form action="{{ url_for('profile.toggle_badge', badge_key=badge.key) }}" method="post">
+          <button type="submit" class="combo-badge-toggle">{{ "Lock" if badge.unlocked else "Mark unlocked" }}</button>
+        </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<div style="height: 1.5rem"></div>
+
+{% for family in trophy_families %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>{{ family.label }}</p>
+  <p class="subtitle" style="margin: 0 0 1.3rem;">Bronze = Tuck, Silver = Straddle, Gold = Full - awarded automatically from your analyzed sessions.</p>
+  <div class="trophy-grid">
+    {% for trophy in family.trophies %}
+    <div class="trophy-card {{ 'is-unlocked' if trophy.unlocked }}">
+      <div class="trophy-shape trophy-shape-{{ trophy.achieved_tier or 'locked' }}">
+        <span class="trophy-icon">{{ trophy.icon }}</span>
+      </div>
+      <p class="trophy-label">{{ trophy.label }}</p>
+      <p class="trophy-description">{{ trophy.description }}</p>
+      <div class="trophy-tier-ladder">
+        {% for t in trophy.tiers %}
+          <span class="trophy-tier-pip trophy-tier-pip-{{ t.tier }} {{ 'is-unlocked' if t.unlocked else 'is-locked' }}" title="{{ t.tier|capitalize }} - {{ t.progression_label }}{{ ' (unlocked)' if t.unlocked else ' (locked)' }}"></span>
+        {% endfor %}
+      </div>
+      {% if trophy.achieved_tier %}
+        <p class="trophy-status">{{ trophy.achieved_tier|capitalize }} unlocked</p>
+      {% else %}
+        <p class="trophy-status trophy-status-locked">Not yet unlocked</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<div style="height: 1.5rem"></div>
+
 {% for tree in trees %}
 <section class="panel skill-tree-panel">
   <p class="panel-title"><span class="dot"></span>{{ tree.label }}&nbsp;skill&nbsp;tree</p>
@@ -160,41 +273,10 @@
 </section>
 {% endfor %}
 
-{% for family in badge_families %}
-<section class="panel">
-  <p class="panel-title"><span class="dot"></span>{{ family.label }}</p>
-  <p class="subtitle" style="margin: 0 0 1.3rem;">Dynamic strength beyond the static hold - logged reps unlock these automatically.</p>
-  <div class="combo-badge-grid">
-    {% for badge in family.badges %}
-    <div class="combo-badge-card {{ 'is-unlocked' if badge.unlocked }}">
-      <div class="combo-badge-shape combo-badge-shape-{{ badge.tier }}">
-        <span class="combo-badge-icon">{{ badge.icon }}</span>
-      </div>
-      <p class="combo-badge-label">{{ badge.label }}</p>
-      <p class="combo-badge-description">{{ badge.description }}</p>
-      {% if badge.rep_pr %}
-        <p class="combo-badge-pr">PR: <strong>{{ badge.rep_pr }}</strong> {{ badge.pr_unit }}</p>
-      {% endif %}
-      {% if badge.unlocked %}
-        <p class="combo-badge-date">Unlocked {{ badge.date_achieved.strftime('%b %-d, %Y') if badge.date_achieved else '' }}</p>
-      {% endif %}
-      {% if not read_only %}
-      <form action="{{ url_for('profile.log_pr', badge_key=badge.key) }}" method="post" class="combo-badge-pr-form">
-        <input type="number" name="rep_pr" min="1" placeholder="Log rep PR" value="{{ badge.rep_pr or '' }}">
-        <button type="submit" class="btn btn-primary">Log</button>
-      </form>
-      <form action="{{ url_for('profile.toggle_badge', badge_key=badge.key) }}" method="post">
-        <button type="submit" class="combo-badge-toggle">{{ "Lock badge" if badge.unlocked else "Mark unlocked" }}</button>
-      </form>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-</section>
-{% endfor %}
+</div>
 
 <script>
-  document.querySelectorAll('.showcase-upload-form input[type="file"]').forEach((input) => {
+  document.querySelectorAll('.showcase-upload-form input[type="file"], .rank-submit-form input[type="file"]').forEach((input) => {
     const label = input.previousElementSibling;
     input.addEventListener('change', () => {
       if (input.files.length) {

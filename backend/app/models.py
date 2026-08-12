@@ -84,6 +84,13 @@ class Attempt(db.Model):
 
     error = db.Column(db.String, nullable=True)
 
+    # Set for a clip explicitly submitted through the Ranked Clip flow
+    # (app/routes.py's rank_submit()) rather than a casual/practice upload -
+    # see app/rank.py. Only ranked clips count toward Profile Rank; every
+    # other PR/History/badge feature treats a ranked clip exactly like any
+    # other attempt (it's still a real analyzed session).
+    is_ranked_clip = db.Column(db.Boolean, nullable=False, default=False)
+
     @property
     def report(self) -> dict:
         return json.loads(self.report_json) if self.report_json else {}
@@ -532,6 +539,73 @@ COMBO_BADGE_FAMILIES = [
     {"key": "front_lever", "label": "Front Lever Combos"},
     {"key": "planche", "label": "Planche Combos"},
 ]
+
+# ============================================================
+# Trophies - the tiered (bronze/silver/gold) half of the badge system,
+# for combo/dynamic movements performable at different progression levels.
+# Deliberately separate from COMBO_BADGES above (which stays exactly as-is,
+# still backing the Goals feature's fine-grained per-tier targets) - a
+# Trophy is a *display/derivation* concept layered on top of real Attempt
+# history, not a new manually-toggled achievement. Each movement's tier is
+# awarded automatically the moment the athlete has a genuinely analyzed,
+# hold-detected Attempt at that exercise_type + progression (checked via
+# PersonalRecord, which already exists per (user, movement_key) from the
+# Difficulty Scaler/PR work - see app/pr_tracking.py) - no new unlock route,
+# no new table, pure reuse of data that's already being tracked.
+#
+# Tier mapping: Bronze = Tuck, Silver = Straddle, Gold = Full - the explicit
+# mapping given for Planche Push-ups and Front Lever Pull-ups, extended
+# uniformly to the other two tracked dynamic families (raises) since they
+# share the exact same tuck/straddle/full progression ladder. Three tiers
+# for all four, rather than forcing in a fourth (e.g. one-arm) - none of
+# these four movements has a broadly-recognized one-arm variant the way the
+# static holds and pull-ups do, so a forced 4th tier would be arbitrary.
+TROPHY_MOVEMENTS = {
+    "front_lever_pull_up": {
+        "label": "Front Lever Pull-up",
+        "description": "Pull into and out of a front lever under control.",
+        "icon": "↑",
+        "family": "front_lever",
+        "tiers": [("bronze", "tuck"), ("silver", "straddle"), ("gold", "full")],
+    },
+    "front_lever_raise": {
+        "label": "Front Lever Raise",
+        "description": "Raise from a dead hang into a front lever.",
+        "icon": "↗",
+        "family": "front_lever",
+        "tiers": [("bronze", "tuck"), ("silver", "straddle"), ("gold", "full")],
+    },
+    "planche_push_up": {
+        "label": "Planche Push-up",
+        "description": "Press a planche through a full range of motion.",
+        "icon": "↓",
+        "family": "planche",
+        "tiers": [("bronze", "tuck"), ("silver", "straddle"), ("gold", "full")],
+    },
+    "planche_raise": {
+        "label": "Planche Raise",
+        "description": "Raise from support into a planche.",
+        "icon": "↗",
+        "family": "planche",
+        "tiers": [("bronze", "tuck"), ("silver", "straddle"), ("gold", "full")],
+    },
+}
+
+TROPHY_FAMILIES = [
+    {"key": "front_lever", "label": "Front Lever Trophies"},
+    {"key": "planche", "label": "Planche Trophies"},
+]
+
+# ============================================================
+# Skill Badges - the one-time, non-tiered half of the badge system: fully
+# unlocking a static hold at its hardest form, or a standalone move with no
+# sub-progression of its own. Deliberately reuses the two existing unlock
+# mechanisms rather than inventing a third: a tree's top node
+# (SkillProgress, already exists) or a standalone COMBO_BADGES entry
+# (ComboBadgeProgress, already exists) for a move like Touch Front Lever
+# that doesn't belong on the tiered Trophy ladder (no tuck/straddle/full
+# progression of its own).
+STANDALONE_SKILL_BADGES = ["front_lever_touch"]
 
 
 class ComboBadgeProgress(db.Model):

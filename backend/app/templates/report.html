@@ -7,6 +7,17 @@
 
 <div style="height: 1.5rem"></div>
 
+{% if rank_celebration %}
+  <div class="rank-celebration rank-celebration-inline" id="rank-celebration">
+    <div class="rank-confetti" aria-hidden="true">
+      {% for i in range(28) %}<span class="rank-confetti-piece rank-confetti-piece-{{ i % 6 }}"></span>{% endfor %}
+    </div>
+    <p class="rank-celebration-kicker">Rank up</p>
+    <p class="rank-celebration-headline">{{ rank_celebration.previous_tier_label ~ ' &rarr; ' if rank_celebration.previous_tier_label }}{{ rank_celebration.new_tier_label }}</p>
+    <p class="rank-celebration-sub">This ranked clip scored {{ rank_celebration.score }} on the Difficulty Scaler - a new Profile Rank.</p>
+  </div>
+{% endif %}
+
 {% if pr_celebration %}
   {% if pr_celebration.is_pr and pr_celebration.is_all_time %}
     <div class="pr-celebration pr-celebration-all-time" id="pr-celebration">

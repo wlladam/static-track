@@ -10,6 +10,7 @@ from app.charts import build_dual_metric_chart_svg, build_trend_chart_svg
 from app.models import Attempt, PrEvent, db
 from app.pipeline_runner import process_video
 from app.pr_tracking import record_attempt_and_check_pr
+from app.rank import RANK_LABELS, next_rank, rank_for_score
 
 bp = Blueprint("main", __name__)
 
@@ -30,26 +31,32 @@ def index():
     return render_template("index.html", recent=recent)
 
 
-@bp.route("/upload", methods=["POST"])
-def upload():
+def _analyze_and_store(is_ranked_clip: bool = False):
+    """Shared by /upload (casual/practice) and /rank/submit (an explicit
+    Ranked Clip attempt) - identical pipeline invocation and Attempt
+    creation either way; only the `is_ranked_clip` flag and, for ranked
+    submissions, the rank-up check afterward, differ. Returns a redirect
+    response, or None if validation failed (caller should already have
+    flashed and redirected in that case - see callers).
+    """
     file = request.files.get("video")
     if not file or file.filename == "":
         flash("Please choose a video file.")
-        return redirect(url_for("main.index"))
+        return None
 
     if not _allowed_file(file.filename):
         flash(f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
-        return redirect(url_for("main.index"))
+        return None
 
     movement_type_hint = request.form.get("movement_type")
     if movement_type_hint not in ALLOWED_MOVEMENT_TYPES:
         flash("Please select whether this is a static hold, a dynamic rep set, or a combo.")
-        return redirect(url_for("main.index"))
+        return None
 
     progression_hint = request.form.get("progression") or None
     if progression_hint is not None and progression_hint not in ALLOWED_PROGRESSIONS:
         flash("Unrecognized progression selection.")
-        return redirect(url_for("main.index"))
+        return None
 
     data_dir = current_app.config["DATA_DIR"]
     original_filename = secure_filename(file.filename)
@@ -62,7 +69,11 @@ def upload():
             video_path, data_dir=data_dir, movement_type_hint=movement_type_hint, progression_hint=progression_hint
         )
         attempt = Attempt(
-            user_id=current_user.id, original_filename=original_filename, video_path=str(video_path), **result
+            user_id=current_user.id,
+            original_filename=original_filename,
+            video_path=str(video_path),
+            is_ranked_clip=is_ranked_clip,
+            **result,
         )
     except Exception as exc:  # noqa: BLE001 - surface any pipeline failure to the user, not a 500
         attempt = Attempt(
@@ -70,6 +81,7 @@ def upload():
             original_filename=original_filename,
             video_path=str(video_path),
             hold_detected=False,
+            is_ranked_clip=is_ranked_clip,
             error=str(exc),
         )
 
@@ -81,7 +93,9 @@ def upload():
     # celebration itself is deferred to the report page via the session
     # (see below) since that's the natural point in the flow the athlete
     # actually sees the result, per the feature's explicit "trigger right
-    # after analysis completes, not buried" requirement.
+    # after analysis completes, not buried" requirement. Ranked clips are
+    # real analyzed attempts too, so they're PR-eligible exactly like a
+    # casual upload - no separate code path needed.
     pr_result = record_attempt_and_check_pr(attempt)
     # Always set (even to None) so a stale celebration from an earlier
     # upload this session can never leak into this (possibly
@@ -89,7 +103,44 @@ def upload():
     # only ever shows on the exact report page that earned it.
     session["pr_celebration"] = {**pr_result, "attempt_id": attempt.id} if pr_result else None
 
+    rank_result = None
+    if is_ranked_clip and attempt.difficulty_scaler_score is not None:
+        # Rank is "best ranked-clip Difficulty Scaler score ever" - so it
+        # can only ever go up, never down, without needing any separate
+        # "current rank" state: excluding this brand new attempt gives the
+        # rank the athlete held walking in; including it gives the rank
+        # they hold now.
+        prior_ranked_scores = [
+            a.difficulty_scaler_score
+            for a in Attempt.query.filter_by(user_id=current_user.id, is_ranked_clip=True, hold_detected=True).all()
+            if a.id != attempt.id and a.difficulty_scaler_score is not None
+        ]
+        previous_best = max(prior_ranked_scores) if prior_ranked_scores else None
+        new_best = max(previous_best, attempt.difficulty_scaler_score) if previous_best is not None else attempt.difficulty_scaler_score
+        old_tier = rank_for_score(previous_best)
+        new_tier = rank_for_score(new_best)
+        if new_tier is not None and new_tier != old_tier:
+            rank_result = {
+                "new_tier": new_tier,
+                "new_tier_label": RANK_LABELS[new_tier],
+                "previous_tier_label": RANK_LABELS.get(old_tier),
+                "score": attempt.difficulty_scaler_score,
+            }
+    session["rank_celebration"] = {**rank_result, "attempt_id": attempt.id} if rank_result else None
+
     return redirect(url_for("main.report", attempt_id=attempt.id))
+
+
+@bp.route("/upload", methods=["POST"])
+def upload():
+    resp = _analyze_and_store(is_ranked_clip=False)
+    return resp if resp is not None else redirect(url_for("main.index"))
+
+
+@bp.route("/rank/submit", methods=["POST"])
+def rank_submit():
+    resp = _analyze_and_store(is_ranked_clip=True)
+    return resp if resp is not None else redirect(url_for("profile.profile"))
 
 
 @bp.route("/attempts/<int:attempt_id>")
@@ -104,7 +155,12 @@ def report(attempt_id):
     pr_celebration = session.pop("pr_celebration", None)
     if pr_celebration and pr_celebration.get("attempt_id") != attempt_id:
         pr_celebration = None
-    return render_template("report.html", attempt=attempt, pr_celebration=pr_celebration)
+    rank_celebration = session.pop("rank_celebration", None)
+    if rank_celebration and rank_celebration.get("attempt_id") != attempt_id:
+        rank_celebration = None
+    return render_template(
+        "report.html", attempt=attempt, pr_celebration=pr_celebration, rank_celebration=rank_celebration
+    )
 
 
 @bp.route("/history")

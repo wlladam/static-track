@@ -16,18 +16,23 @@ from werkzeug.utils import secure_filename
 
 from app import storage
 from app.models import (
-    COMBO_BADGE_FAMILIES,
     COMBO_BADGES,
     EXPERIENCE_LEVELS,
     PRIMARY_GOALS,
     SKILL_TREES,
+    STANDALONE_SKILL_BADGES,
     TRAINING_TIMES,
+    TROPHY_FAMILIES,
+    TROPHY_MOVEMENTS,
+    Attempt,
     AthleteProfile,
     ComboBadgeProgress,
+    PersonalRecord,
     SkillProgress,
     db,
     tier_for_index,
 )
+from app.rank import RANK_LABELS, RANK_THRESHOLDS, next_rank, rank_for_score
 
 bp = Blueprint("profile", __name__, url_prefix="/profile")
 
@@ -105,26 +110,142 @@ def _build_tree_view(tree_key: str, tree_def: dict, progress_map: dict) -> dict:
     }
 
 
-def _build_badge_view(badge_key: str, badge_def: dict, progress_map: dict) -> dict:
-    row = progress_map.get(badge_key)
+def _build_skill_badges(user_id: int, skill_progress: dict, combo_progress: dict) -> list:
+    """Skill Badges - one-time, non-tiered mastery achievements: fully
+    unlocking a tree's hardest node (Full Front Lever, Full Planche), plus
+    any standalone move with no tiered progression of its own (Touch Front
+    Lever) - see STANDALONE_SKILL_BADGES/models.py. Reuses the exact same
+    unlock state SkillProgress/ComboBadgeProgress already track; this is a
+    curated view over it, not a new achievement mechanism.
+    """
+    badges = []
+    for tree_key, tree_def in SKILL_TREES.items():
+        progressions = tree_def["progressions"]
+        top = progressions[-1]
+        row = skill_progress.get((tree_key, top["key"]))
+        badges.append(
+            {
+                "key": f"{tree_key}_mastery",
+                "label": top["label"],
+                "description": f"Fully unlock the {top['label']}.",
+                "icon": tree_def["icon"],
+                "family": tree_key,
+                "tier": tier_for_index(len(progressions) - 1),
+                "unlocked": bool(row and row.unlocked),
+                "date_achieved": row.date_achieved if row else None,
+            }
+        )
+    for badge_key in STANDALONE_SKILL_BADGES:
+        badge_def = COMBO_BADGES.get(badge_key)
+        if badge_def is None:
+            continue
+        row = combo_progress.get(badge_key)
+        badges.append(
+            {
+                "key": badge_key,
+                "label": badge_def["label"],
+                "description": badge_def["description"],
+                "icon": badge_def["icon"],
+                "family": badge_def["family"],
+                "tier": badge_def["tier"],
+                "unlocked": bool(row and row.unlocked),
+                "date_achieved": row.date_achieved if row else None,
+            }
+        )
+    return badges
+
+
+def _build_trophies(user_id: int) -> list:
+    """Trophies - tiered (bronze=tuck/silver=straddle/gold=full) awards for
+    the dynamic/combo movements in TROPHY_MOVEMENTS, derived automatically
+    from real analyzed sessions rather than manually toggled. Reuses
+    PersonalRecord (already built for Difficulty Scaler PR tracking - see
+    app/pr_tracking.py) as the source of truth: a tier is "achieved" iff a
+    PersonalRecord exists for that exact movement_key, i.e. the athlete has
+    a genuine hold-detected attempt at that exercise + progression. The
+    highest achieved tier is the trophy the profile shows; the full ladder
+    (including locked tiers) is kept too, so progress toward the next tier
+    is visible - same pattern as the skill tree.
+    """
+    pr_map = {pr.movement_key: pr for pr in PersonalRecord.query.filter_by(user_id=user_id).all()}
+    trophies = []
+    for key, td in TROPHY_MOVEMENTS.items():
+        ladder = []
+        achieved_tier = None
+        achieved_pr = None
+        for tier_name, progression in td["tiers"]:
+            pr = pr_map.get(f"dynamic:{key}:{progression}")
+            unlocked = pr is not None
+            ladder.append(
+                {
+                    "tier": tier_name,
+                    "progression": progression,
+                    "progression_label": progression.replace("_", " ").title(),
+                    "unlocked": unlocked,
+                    "achieved_at": pr.achieved_at if pr else None,
+                    "score": pr.best_scaler_score if pr else None,
+                }
+            )
+            if unlocked:
+                achieved_tier = tier_name
+                achieved_pr = pr
+        trophies.append(
+            {
+                "key": key,
+                "label": td["label"],
+                "description": td["description"],
+                "icon": td["icon"],
+                "family": td["family"],
+                "tiers": ladder,
+                "achieved_tier": achieved_tier,
+                "unlocked": achieved_tier is not None,
+                "best_attempt_id": achieved_pr.best_attempt_id if achieved_pr else None,
+            }
+        )
+    return trophies
+
+
+def build_rank_view(user_id: int) -> dict:
+    """Profile Rank - the athlete's overall standing, driven by the highest
+    Difficulty Scaler score across every clip they've explicitly submitted
+    through the Ranked Clip flow (is_ranked_clip=True) - see app/rank.py
+    for the threshold reasoning. Deliberately excludes casual/practice
+    uploads: rank is meant to represent a clip the athlete chose to put
+    forward as their current best, not just their single best session ever
+    logged for any reason.
+    """
+    ranked_attempts = Attempt.query.filter_by(user_id=user_id, is_ranked_clip=True, hold_detected=True).all()
+    scores = [a.difficulty_scaler_score for a in ranked_attempts if a.difficulty_scaler_score is not None]
+    best_score = max(scores) if scores else None
+    tier = rank_for_score(best_score)
+    nxt = next_rank(tier)
+
+    current_threshold = RANK_THRESHOLDS.get(tier) if tier else 0.0
+    next_threshold = RANK_THRESHOLDS.get(nxt) if nxt else None
+    if nxt is None:
+        progress_pct = 100
+    elif next_threshold == current_threshold:
+        progress_pct = 100
+    else:
+        span = next_threshold - current_threshold
+        progress_pct = max(0, min(100, round(((best_score or 0) - current_threshold) / span * 100)))
+
     return {
-        "key": badge_key,
-        "label": badge_def["label"],
-        "description": badge_def["description"],
-        "icon": badge_def["icon"],
-        "family": badge_def["family"],
-        "tier": badge_def["tier"],
-        "pr_unit": badge_def["pr_unit"],
-        "unlocked": bool(row and row.unlocked),
-        "date_achieved": row.date_achieved if row else None,
-        "rep_pr": row.rep_pr if row else None,
+        "tier": tier,
+        "label": RANK_LABELS.get(tier, "Unranked"),
+        "best_score": best_score,
+        "ranked_clip_count": len(ranked_attempts),
+        "next_tier": nxt,
+        "next_label": RANK_LABELS.get(nxt) if nxt else None,
+        "next_threshold": next_threshold,
+        "progress_pct": progress_pct,
     }
 
 
 def build_profile_view_context(athlete: AthleteProfile, user_id: int = None) -> dict:
-    """The trees/badges/tallies profile.html needs for whichever user owns
-    `athlete` - factored out so app/friends_routes.py can render the exact
-    same profile.html for a friend's real, own data in read-only mode
+    """The trees/badges/trophies/rank profile.html needs for whichever user
+    owns `athlete` - factored out so app/friends_routes.py can render the
+    exact same profile.html for a friend's real, own data in read-only mode
     without duplicating this logic. Defaults to the logged-in user;
     friends_routes.py passes the friend's id explicitly.
     """
@@ -133,32 +254,30 @@ def build_profile_view_context(athlete: AthleteProfile, user_id: int = None) -> 
     combo_progress = _combo_progress_map(user_id)
 
     trees = [_build_tree_view(key, tree_def, skill_progress) for key, tree_def in SKILL_TREES.items()]
-    badges = [_build_badge_view(key, badge_def, combo_progress) for key, badge_def in COMBO_BADGES.items()]
 
-    total_skill_badges = sum(t["total_count"] for t in trees)
-    unlocked_skill_badges = sum(t["unlocked_count"] for t in trees)
-    unlocked_combo_badges = sum(1 for b in badges if b["unlocked"])
+    skill_badges = _build_skill_badges(user_id, skill_progress, combo_progress)
+    unlocked_skill_badges = sum(1 for b in skill_badges if b["unlocked"])
 
-    # Grouped by family so the badge wall stays readable as the set grows -
-    # see COMBO_BADGE_FAMILIES in app/models.py.
-    badge_families = [
-        {
-            "key": fam["key"],
-            "label": fam["label"],
-            "badges": [b for b in badges if b["family"] == fam["key"]],
-        }
-        for fam in COMBO_BADGE_FAMILIES
+    trophies = _build_trophies(user_id)
+    unlocked_trophies = sum(1 for t in trophies if t["unlocked"])
+    trophy_families = [
+        {"key": fam["key"], "label": fam["label"], "trophies": [t for t in trophies if t["family"] == fam["key"]]}
+        for fam in TROPHY_FAMILIES
     ]
+
+    rank = build_rank_view(user_id)
 
     return {
         "athlete": athlete,
         "trees": trees,
-        "badges": badges,
-        "badge_families": badge_families,
-        "total_skill_badges": total_skill_badges,
+        "skill_badges": skill_badges,
+        "total_skill_badges": len(skill_badges),
         "unlocked_skill_badges": unlocked_skill_badges,
-        "unlocked_combo_badges": unlocked_combo_badges,
-        "total_combo_badges": len(badges),
+        "trophies": trophies,
+        "trophy_families": trophy_families,
+        "total_trophies": len(trophies),
+        "unlocked_trophies": unlocked_trophies,
+        "rank": rank,
     }
 
 
