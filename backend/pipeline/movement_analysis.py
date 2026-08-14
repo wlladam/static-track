@@ -497,11 +497,22 @@ def _analyze_dynamic(
     # rather than shown as a headline stat - see report.html) is the honest
     # answer.
     rom_consistency_score = None
+    rom_consistency_detail = {}
     if len(roms) > 1:
         rom_consistency = statistics.pstdev(roms)
         rom_consistency_score = round(
             max(0.0, min(100.0, 100 - (rom_consistency / rom_reference) * 40)), 1
         )
+        # Real per-clip numbers for the feedback text (see
+        # pipeline/feedback.py) - which unit depends on whether elbow-angle
+        # or hip-height ROM was measured (see rom_reference above).
+        rom_consistency_detail = {
+            "stdev": round(rom_consistency, 2),
+            "reference": rom_reference,
+            "unit": "deg" if rom_reference == ELBOW_ROM_CONSISTENCY_REFERENCE_DEG else "normalized",
+            "min_rom": round(min(roms), 2),
+            "max_rom": round(max(roms), 2),
+        }
 
     # Set-level form score/feedback: score arm_lockout and hip_shoulder_alignment
     # across every rep's dominant window combined, rather than per-rep - a
@@ -527,7 +538,7 @@ def _analyze_dynamic(
             score=rom_consistency_score,
             label="rep-to-rep consistency",
             confidence="high",
-            detail={},
+            detail=rom_consistency_detail,
         )
 
     overall_score, overall_confidence = None, None

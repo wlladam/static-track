@@ -176,7 +176,15 @@ def score_arm_lockout(records: list[dict]) -> CriterionScore:
         score=round(score, 1),
         label=label,
         confidence=confidence,
-        detail={"avg_elbow_angle_deg": round(avg_angle, 1)},
+        detail={
+            "avg_elbow_angle_deg": round(avg_angle, 1),
+            # Real, exact numbers every downstream feedback sentence is
+            # built from (see pipeline/feedback.py) - not just the score,
+            # so two clips with different exact angles read as genuinely
+            # different feedback instead of both landing "good lockout".
+            "reference_deg": PRACTICAL_LOCKOUT_REFERENCE_DEG,
+            "degrees_short_of_reference": round(max(0.0, PRACTICAL_LOCKOUT_REFERENCE_DEG - avg_angle), 1),
+        },
     )
 
 
@@ -215,7 +223,15 @@ def score_hip_shoulder_alignment(records: list[dict]) -> CriterionScore:
         score=round(score, 1),
         label=label,
         confidence=confidence,
-        detail={"body_line_deviation": round(avg_dev, 3), "direction": direction},
+        detail={
+            "body_line_deviation": round(avg_dev, 3),
+            "direction": direction,
+            # Same normalized deviation, expressed as a percentage of the
+            # shoulder-to-ankle line length - far more concrete to an
+            # athlete than a raw 0.03-ish fraction, and the exact number
+            # differs clip to clip (unlike the old fixed sag/pike sentence).
+            "deviation_pct_of_body_line": round(abs(avg_dev) * 100, 1),
+        },
     )
 
 
@@ -246,7 +262,15 @@ def score_hold_stability(records: list[dict]) -> CriterionScore:
         score=round(score, 1),
         label=label,
         confidence=confidence,
-        detail={"median_displacement": round(median_disp, 4)},
+        detail={
+            "median_displacement": round(median_disp, 4),
+            "stability_threshold": DEFAULT_STABILITY_THRESHOLD,
+            # How many multiples of the "rock solid" threshold the body
+            # actually moved by - a genuinely different number for a
+            # slightly-shaky hold vs a visibly-failing one, where the old
+            # text was identical for any score in the same bucket.
+            "times_threshold": round(median_disp / DEFAULT_STABILITY_THRESHOLD, 2),
+        },
     )
 
 

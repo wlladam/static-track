@@ -314,8 +314,10 @@ def test_upload_dynamic_reps_renders_report(client, monkeypatch):
         "overall_score": 88.5,
         "overall_confidence": "high",
         "report_json": (
-            '{"strengths": ["Arm lockout: Elbows stayed locked out."], '
-            '"refine": [], "weaknesses": [], '
+            '{"strengths": [{"criterion": "arm_lockout", "label": "Arm lockout", "kind": "strength", '
+            '"headline": "Elbows stayed locked out at 178.0deg.", "context": "Great extension.", '
+            '"severity": 10.0, "score": 95.0, "direction": null}], '
+            '"refine": [], "weaknesses": [], "recommendations": [], '
             '"summary": "Strong front lever pull up set overall (88.5/100)."}'
         ),
         "exercise_type": "front_lever_pull_up",
@@ -343,7 +345,7 @@ def test_upload_dynamic_reps_renders_report(client, monkeypatch):
     assert b"3" in report_resp.data  # rep count
     assert b"88.5" in report_resp.data  # form score, now the headline stat instead of ROM consistency
     assert b"Strong front lever pull up set overall" in report_resp.data  # summary
-    assert b"Elbows stayed locked out" in report_resp.data  # strengths section
+    assert b"Elbows stayed locked out" in report_resp.data  # strengths section headline
 
 
 def test_upload_combo_renders_report(client, monkeypatch):

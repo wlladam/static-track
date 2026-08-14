@@ -9,7 +9,17 @@ import os
 from pathlib import Path
 
 from pipeline.movement_analysis import analyze_movement
+from pipeline.recommendations import build_recommendations
 from pipeline.run_pipeline import run as run_pose_pipeline
+
+
+def _recommendations_json(weaknesses, refine, move_family, progression) -> list:
+    """Weaknesses first, then refine (both already severity-sorted within
+    themselves) - see recommendations.build_recommendations for why order
+    matters here (only the front of the list drives what gets recommended).
+    """
+    ranked = list(weaknesses) + list(refine)
+    return [r.to_dict() for r in build_recommendations(ranked, move_family, progression)]
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -120,9 +130,17 @@ def process_video(
                             if report
                             else {}
                         ),
-                        "strengths": report.strengths if report else [],
-                        "refine": report.refine if report else [],
-                        "weaknesses": report.weaknesses if report else [],
+                        "strengths": [p.to_dict() for p in report.strengths] if report else [],
+                        "refine": [p.to_dict() for p in report.refine] if report else [],
+                        "weaknesses": [p.to_dict() for p in report.weaknesses] if report else [],
+                        "recommendations": (
+                            _recommendations_json(
+                                report.weaknesses, report.refine, variant.move_type if variant else None,
+                                variant.progression if variant else None,
+                            )
+                            if report
+                            else []
+                        ),
                         "summary": report.summary if report else None,
                         "scapular_position_note": report.scapular_position_note if report else None,
                     }
@@ -142,9 +160,12 @@ def process_video(
                 "overall_confidence": data.overall_confidence,
                 "report_json": json.dumps(
                     {
-                        "strengths": data.strengths,
-                        "refine": data.refine,
-                        "weaknesses": data.weaknesses,
+                        "strengths": [p.to_dict() for p in data.strengths],
+                        "refine": [p.to_dict() for p in data.refine],
+                        "weaknesses": [p.to_dict() for p in data.weaknesses],
+                        "recommendations": _recommendations_json(
+                            data.weaknesses, data.refine, data.move_type, data.progression
+                        ),
                         "summary": data.summary,
                     }
                 ),

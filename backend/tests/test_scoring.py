@@ -202,7 +202,7 @@ def test_compute_form_report_aggregates_and_flags_weakest_criteria():
     assert report.overall_score == expected_overall
     assert report.overall_confidence == "high"
     all_notes = report.strengths + report.refine + report.weaknesses
-    assert any("Arm lockout" in note for note in all_notes)
+    assert any(note.label == "Arm lockout" for note in all_notes)
     assert report.summary
     assert "scapular" in report.scapular_position_note.lower()
 

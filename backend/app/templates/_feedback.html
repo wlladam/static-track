@@ -1,49 +1,72 @@
 {# Shared feedback sections for both static holds and dynamic rep sets -
-   `feedback` is a dict/object with .summary, .strengths, .refine, .weaknesses
-   (see pipeline/feedback.py). Every item is "Criterion name: specific note". #}
+   `feedback` has .summary, .strengths, .refine, .weaknesses (each a list of
+   dicts: criterion/label/kind/headline/context/severity/score - see
+   pipeline/feedback.py's FeedbackPoint), already sorted most-significant
+   first within each bucket. #}
 <section class="panel feedback-summary-panel">
   <p class="panel-title"><span class="dot"></span>Summary</p>
   <p class="feedback-summary">{{ feedback.summary }}</p>
 </section>
 
+{% macro point_card(item, icon) %}
+  <li class="feedback-point kind-{{ item.kind }}">
+    <span class="feedback-icon">{{ icon|safe }}</span>
+    <div class="feedback-point-body">
+      <p class="feedback-point-label">{{ item.label }}</p>
+      <p class="feedback-point-headline">{{ item.headline }}</p>
+      {% if item.context %}<p class="feedback-point-context">{{ item.context }}</p>{% endif %}
+    </div>
+  </li>
+{% endmacro %}
+
+{% macro point_list(items, icon, headline_count=3) %}
+  <ul class="feedback-list">
+    {% for item in items[:headline_count] %}{{ point_card(item, icon) }}{% endfor %}
+  </ul>
+  {% if items|length > headline_count %}
+    <details class="feedback-minor-notes">
+      <summary>{{ items|length - headline_count }} more note{{ 's' if items|length - headline_count != 1 }}</summary>
+      <ul class="feedback-list feedback-list-minor">
+        {% for item in items[headline_count:] %}{{ point_card(item, icon) }}{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+{% endmacro %}
+
 {% if feedback.strengths %}
 <section class="panel">
   <p class="panel-title"><span class="dot"></span>Strengths</p>
-  <ul class="feedback-list feedback-strengths">
-    {% for item in feedback.strengths %}
-      <li>
-        <span class="feedback-icon">&#10003;</span>
-        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
-      </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if feedback.refine %}
-<section class="panel">
-  <p class="panel-title"><span class="dot"></span>Areas to refine</p>
-  <ul class="feedback-list feedback-refine">
-    {% for item in feedback.refine %}
-      <li>
-        <span class="feedback-icon">&#8226;</span>
-        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
-      </li>
-    {% endfor %}
-  </ul>
+  {{ point_list(feedback.strengths, "&#10003;") }}
 </section>
 {% endif %}
 
 {% if feedback.weaknesses %}
 <section class="panel">
   <p class="panel-title"><span class="dot"></span>Weaknesses</p>
-  <ul class="feedback-list feedback-weaknesses">
-    {% for item in feedback.weaknesses %}
-      <li>
-        <span class="feedback-icon">&#33;</span>
-        <span><strong>{{ item.split(': ', 1)[0] }}</strong> &mdash; {{ item.split(': ', 1)[1] }}</span>
-      </li>
+  {{ point_list(feedback.weaknesses, "&#33;") }}
+</section>
+{% endif %}
+
+{% if feedback.refine %}
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Areas to refine</p>
+  {{ point_list(feedback.refine, "&#8226;") }}
+</section>
+{% endif %}
+
+{% if feedback.recommendations %}
+<section class="panel recommended-training">
+  <p class="panel-title"><span class="dot"></span>Recommended&nbsp;training</p>
+  <p class="subtitle" style="margin:0 0 1.3rem;">Built from what this specific session flagged - not a generic list.</p>
+  <div class="recommendation-grid">
+    {% for rec in feedback.recommendations %}
+    <div class="recommendation-card">
+      <p class="recommendation-target">Targets: {{ rec.targets }}</p>
+      <p class="recommendation-name">{{ rec.name }}</p>
+      <p class="recommendation-why">{{ rec.why }}</p>
+      <p class="recommendation-prescription">{{ rec.prescription }}</p>
+    </div>
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
