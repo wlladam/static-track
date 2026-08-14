@@ -81,6 +81,49 @@ html { scroll-behavior: smooth; }
   * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
 
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Mobile-first safety net: nothing on this site should ever be able to
+   force the page itself wider than the viewport - a single fixed-width
+   descendant (a wide table, an un-wrapped nav, a long unbroken string)
+   used to blow out html/body's width, which is what let the whole page be
+   pinch-zoomed/panned to reveal dead space on the right on every screen.
+   Individual overflow-prone elements (tables, the skill tree) still get
+   their own explicit horizontal-scroll container below - this is a
+   backstop, not a substitute for fixing those properly. */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+/* Nothing embedded in content should be able to force a scrollbar either -
+   applies everywhere (not just inside a media query), since a wide image/
+   video/table is exactly as wrong on a narrow desktop window as on a
+   phone. */
+img, video, svg, canvas { max-width: 100%; height: auto; }
+
+/* Wrap around any <table> that can genuinely outgrow a phone width (many
+   columns of real data - History, Admin) - scrolls horizontally within
+   its own bounded box instead of the whole page. The table keeps its
+   natural column widths (nothing is force-squeezed into illegibility);
+   only the overflow behavior changes. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+/* Comfortable tap targets on touch devices - a mouse-era 0.5rem-padding
+   button/input reads fine with a cursor but is genuinely hard to hit
+   reliably with a finger. */
+@media (pointer: coarse) {
+  .btn, .nav-link, .combo-badge-toggle, button, input[type="submit"] {
+    min-height: 2.5rem;
+  }
+  input[type="text"], input[type="email"], input[type="password"],
+  input[type="number"], input[type="file"], select, textarea {
+    min-height: 2.5rem;
+    font-size: 16px; /* below 16px, iOS Safari auto-zooms in on focus - exactly the "have to zoom" complaint */
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -917,6 +960,31 @@ input[type="file"] { display: none; }
   border-radius: 6px;
 }
 
+/* The showcase clip should read as one featured card among several on the
+   profile, not the dominant element of the page - a portrait phone-shot
+   clip (very common source footage here) has no width cap on the plain
+   .video-frame video rule above, so it renders at its native aspect ratio
+   at full column width, which for a 9:16 clip means a very tall element
+   that pushes rank/stats/badges far down the page. Fixed aspect-ratio +
+   object-fit: cover turns it into a consistent, compact "thumbnail card"
+   regardless of the source clip's own orientation - taller than wide,
+   shorter than wide, doesn't matter, the card itself stays the same shape. */
+.video-frame-compact {
+  aspect-ratio: 4 / 3;
+  max-height: 260px;
+  overflow: hidden;
+}
+
+.video-frame-compact video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (min-width: 641px) {
+  .video-frame-compact { aspect-ratio: 16 / 10; max-height: 300px; }
+}
+
 /* ---------- showcase hero (profile) ---------- */
 
 .showcase-hero {
@@ -1265,6 +1333,14 @@ input[type="file"] { display: none; }
   border-radius: var(--radius-sm);
   padding: 0.55rem 0.8rem;
   cursor: pointer;
+  /* A <select> with no width constraint shrink-wraps to its longest
+     <option> text - some real movement labels (a long combo name) are
+     wide enough to blow well past a phone's viewport on their own. Caps
+     it to the available row width and lets the closed-state text truncate
+     rather than force the control wider than the screen. */
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .movement-pr-grid {
@@ -1904,10 +1980,25 @@ input[type="file"] { display: none; }
 .combo-badge-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
 @media (max-width: 640px) {
-  main { padding: 2rem 1.2rem 4rem; }
-  nav { padding: 1rem 1.2rem; }
+  main { padding: 1.5rem 1rem 4rem; }
+  nav {
+    padding: 0.7rem 1rem;
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+  .brand { flex: 1 1 100%; margin-right: 0; }
+  .nav-link {
+    font-size: 0.72rem;
+    padding: 0.45rem 0.65rem;
+  }
+  .nav-user { display: none; } /* display_name is redundant with the account already visibly logged in; reclaim the room on a narrow row */
   .score-hero { justify-content: center; text-align: center; }
   .profile-badge-tally { margin-left: 0; }
+}
+
+@media (max-width: 400px) {
+  h1.display { font-size: clamp(2rem, 9vw, 2.6rem); }
+  .nav-link { font-size: 0.68rem; padding: 0.4rem 0.55rem; }
 }
 
 /* ============================================================

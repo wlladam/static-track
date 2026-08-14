@@ -141,7 +141,9 @@
 <section class="showcase-hero">
   {% if athlete.has_showcase %}
     <div class="showcase-hero-video">
-      <video controls preload="metadata" class="video-frame" src="{{ url_for('profile.showcase_video') }}"></video>
+      <div class="video-frame video-frame-compact">
+        <video controls preload="metadata" src="{{ url_for('profile.showcase_video') }}"></video>
+      </div>
     </div>
     <div class="showcase-hero-meta">
       <p class="panel-title"><span class="dot"></span>Best&nbsp;combo</p>

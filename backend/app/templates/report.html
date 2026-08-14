@@ -137,6 +137,7 @@
 
   <section class="panel">
     <p class="panel-title"><span class="dot"></span>Per-rep&nbsp;breakdown</p>
+    <div class="table-scroll">
     <table class="history-table">
       <thead>
         <tr>
@@ -165,6 +166,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% if attempt.rep_count == 1 %}
       <p class="annotation" style="margin-top: 1rem;">
         Only one rep was detected, so rep-to-rep consistency couldn't be measured - upload a clip with
