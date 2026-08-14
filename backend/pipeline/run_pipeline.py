@@ -19,6 +19,7 @@ from pathlib import Path
 
 from pipeline.extract_frames import extract_frames
 from pipeline.landmark_smoothing import smooth_landmarks
+from pipeline.faststart import make_faststart
 from pipeline.overlay_debug import DebugVideoWriter, draw_skeleton
 from pipeline.pose_estimation import PoseEstimator
 
@@ -81,6 +82,13 @@ def run(video_path: str, target_fps: float, output_dir: Path, skip_debug_overlay
 
         if debug_writer is not None:
             debug_writer.close()
+            # OpenCV's muxer writes the moov atom (index) at the end of the
+            # file - fine for desktop browsers, but iOS Safari won't play a
+            # <video> at all until it can read moov, and won't fetch it from
+            # the end of the file on its own. Relocating it here is the
+            # entire fix for "video doesn't show up on iPhone" - see
+            # pipeline/faststart.py's module docstring.
+            make_faststart(str(debug_video_path))
 
     json_path = pose_output_dir / f"{video_path.stem}_pose.json"
     json_path.write_text(json.dumps(records, indent=2))
