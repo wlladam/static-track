@@ -75,7 +75,21 @@ def draw_skeleton(frame_bgr: np.ndarray, landmarks: dict) -> np.ndarray:
 
 
 class DebugVideoWriter:
-    """Accumulates annotated frames and writes them out as a video file."""
+    """Accumulates annotated frames and writes them out as a video file.
+
+    The overlay is a nice-to-have, not something scoring depends on - so
+    this never raises on its own if the underlying encoder can't actually
+    produce a file. A prebuilt opencv-python-headless wheel's bundled
+    FFmpeg doesn't always include a working H.264 encoder on every
+    platform (a real gap seen after deploying to Render's Linux container -
+    cv2.VideoWriter silently opens "successfully" in some builds but never
+    actually writes bytes to disk, leaving no file at output_path at all;
+    the crash this caused - the whole analysis erroring out with a raw
+    "[Errno 2] No such file or directory" - happened downstream, in
+    run_pipeline.py trying to faststart-fix a file that was never created).
+    `is_open` lets callers detect this up front and skip the overlay
+    cleanly instead of writing frames into the void and finding out later.
+    """
 
     def __init__(self, output_path: str, fps: float, frame_size: tuple[int, int]):
         # avc1 (H.264), not mp4v - mp4v isn't decodable by browsers (Chrome/
@@ -84,9 +98,11 @@ class DebugVideoWriter:
         # <video> tag, not just inspected by pulling still frames.
         fourcc = cv2.VideoWriter_fourcc(*"avc1")
         self._writer = cv2.VideoWriter(output_path, fourcc, fps, frame_size)
+        self.is_open = bool(self._writer.isOpened())
 
     def write(self, frame_bgr: np.ndarray):
-        self._writer.write(frame_bgr)
+        if self.is_open:
+            self._writer.write(frame_bgr)
 
     def close(self):
         self._writer.release()

@@ -80,17 +80,38 @@ def run(video_path: str, target_fps: float, output_dir: Path, skip_debug_overlay
                 debug_writer = DebugVideoWriter(
                     str(debug_video_path), fps=target_fps, frame_size=(width, height)
                 )
+                if not debug_writer.is_open:
+                    # The encoder couldn't actually open on this host (see
+                    # DebugVideoWriter's docstring) - the overlay is a
+                    # nice-to-have, not something scoring depends on, so
+                    # give up on it cleanly rather than writing frames into
+                    # a file that will never exist and crashing the whole
+                    # analysis later trying to post-process it.
+                    print(f"Debug overlay encoder failed to open on this host - skipping overlay for {video_path.name}.")
+                    debug_writer = None
+                    break
             debug_writer.write(annotated)
 
         if debug_writer is not None:
             debug_writer.close()
-            # OpenCV's muxer writes the moov atom (index) at the end of the
-            # file - fine for desktop browsers, but iOS Safari won't play a
-            # <video> at all until it can read moov, and won't fetch it from
-            # the end of the file on its own. Relocating it here is the
-            # entire fix for "video doesn't show up on iPhone" - see
-            # pipeline/faststart.py's module docstring.
-            make_faststart(str(debug_video_path))
+            if debug_video_path.exists() and debug_video_path.stat().st_size > 0:
+                try:
+                    # OpenCV's muxer writes the moov atom (index) at the end
+                    # of the file - fine for desktop browsers, but iOS
+                    # Safari won't play a <video> at all until it can read
+                    # moov, and won't fetch it from the end of the file on
+                    # its own. Relocating it here is the entire fix for
+                    # "video doesn't show up on iPhone" - see
+                    # pipeline/faststart.py's module docstring.
+                    make_faststart(str(debug_video_path))
+                except Exception as exc:  # noqa: BLE001 - the overlay existing (even non-faststart) beats losing the whole analysis over a cosmetic post-process step
+                    print(f"faststart fixup failed for {debug_video_path.name}, leaving overlay as-is: {exc}")
+            else:
+                # The writer opened but never actually produced a real file -
+                # same "give up cleanly" reasoning as the isOpened() check
+                # above, just caught after the fact instead of before.
+                print(f"Debug overlay was not written to disk - skipping overlay for {video_path.name}.")
+                debug_writer = None
 
     json_path = pose_output_dir / f"{video_path.stem}_pose.json"
     json_path.write_text(json.dumps(records, indent=2))
