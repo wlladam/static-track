@@ -33,6 +33,11 @@ class User(UserMixin, db.Model):
     # stable handle other athletes search for and friend requests show).
     display_name = db.Column(db.String, nullable=False, unique=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    # Gates app/admin_routes.py's usage dashboard - not user-settable, only
+    # ever flipped by app/__init__.py's _ensure_admin_bootstrap (matches the
+    # app creator's own email) so it can never be granted via any web-facing
+    # form/route.
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
 
     def set_password(self, raw_password: str) -> None:
         self.password_hash = generate_password_hash(raw_password)

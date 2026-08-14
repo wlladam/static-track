@@ -18,6 +18,14 @@ from app.models import (
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
+# The app creator's own account is the only one ever granted admin access -
+# not a web-facing setting, so it's a code constant rather than DB-editable
+# config. Overridable via env var for a non-default deploy, but defaults to
+# the real creator email so a fresh production database self-bootstraps the
+# right account without any manual DB/dashboard step - see
+# _ensure_admin_bootstrap below.
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "will09adam@gmail.com")
+
 
 def _resolve_database_uri(data_dir: Path, db_path: Path = None) -> str:
     """Postgres (via DATABASE_URL - see render.yaml, which provisions a
@@ -97,22 +105,38 @@ def create_app(db_path: Path = None, data_dir: Path = None) -> Flask:
     from app.profile_routes import bp as profile_bp
     from app.goals_routes import bp as goals_bp
     from app.friends_routes import bp as friends_bp
+    from app.admin_routes import bp as admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(routes_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(goals_bp)
     app.register_blueprint(friends_bp)
+    app.register_blueprint(admin_bp)
 
     # Every screen except auth itself requires a real logged-in account -
     # every athlete's data is now owned by a User, so there's no
     # meaningful "logged out" version of any of these routes to show.
-    _protected_blueprints = {"main", "profile", "goals", "friends"}
+    _protected_blueprints = {"main", "profile", "goals", "friends", "admin"}
 
     @app.before_request
     def require_login():
         if request.blueprint in _protected_blueprints and not current_user.is_authenticated:
             return redirect(url_for("auth.login"))
+
+    @app.before_request
+    def require_admin():
+        # A second, stricter gate on top of require_login above, scoped to
+        # just the admin blueprint - a logged-in but non-admin account gets
+        # a plain 404 (not 403), so the dashboard's existence isn't
+        # confirmable via direct URL guessing either. Runs after
+        # require_login (registered second - Flask calls before_request
+        # hooks in registration order), so current_user is already resolved.
+        if request.blueprint == "admin":
+            if not current_user.is_authenticated or not current_user.is_admin:
+                from flask import abort
+
+                abort(404)
 
     @app.template_filter("score_tier")
     def score_tier(score) -> str:
@@ -144,8 +168,23 @@ def create_app(db_path: Path = None, data_dir: Path = None) -> Flask:
     with app.app_context():
         db.create_all()
         _ensure_new_columns()
+        _ensure_admin_bootstrap()
 
     return app
+
+
+def _ensure_admin_bootstrap() -> None:
+    """Grants is_admin to the account matching ADMIN_EMAIL, if it exists
+    and doesn't already have it. Runs on every startup (idempotent - a
+    no-op once already granted) so a fresh production database
+    self-bootstraps the creator's admin access the moment they sign up,
+    with no manual DB step needed - same reasoning as _ensure_new_columns.
+    Silently does nothing if that account hasn't signed up yet.
+    """
+    user = User.query.filter_by(email=ADMIN_EMAIL).first()
+    if user is not None and not user.is_admin:
+        user.is_admin = True
+        db.session.commit()
 
 
 def _ensure_new_columns() -> None:
@@ -162,6 +201,7 @@ def _ensure_new_columns() -> None:
 
     column_migrations = [
         ("attempt", "is_ranked_clip", "ALTER TABLE attempt ADD COLUMN is_ranked_clip BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("user", "is_admin", "ALTER TABLE \"user\" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE"),
     ]
 
     inspector = inspect(db.engine)

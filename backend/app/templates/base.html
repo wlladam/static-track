@@ -18,6 +18,9 @@
       <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('goals.') }}" href="{{ url_for('goals.goals') }}">Goals</a>
       <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('friends.') }}" href="{{ url_for('friends.friends') }}">Friends</a>
       <a class="nav-link nav-link-profile {{ 'active' if request.endpoint and request.endpoint.startswith('profile.') }}" href="{{ url_for('profile.profile') }}">Profile</a>
+      {% if current_user.is_admin %}
+        <a class="nav-link nav-link-admin {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.dashboard') }}">Admin</a>
+      {% endif %}
       <span class="nav-user">{{ current_user.display_name }}</span>
       <form action="{{ url_for('auth.logout') }}" method="post" class="nav-logout-form">
         <button type="submit" class="nav-link nav-logout-btn">Log out</button>

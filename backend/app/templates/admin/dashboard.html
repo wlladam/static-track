@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Admin - HOLDFAST{% endblock %}
+{% block content %}
+<p class="eyebrow">Creator&nbsp;only</p>
+<h1 class="display">ADMIN&nbsp;DASHBOARD</h1>
+<p class="subtitle">Usage and health overview - not visible to any other account.</p>
+
+<div style="height: 1.5rem"></div>
+
+<div class="admin-stat-grid">
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ total_users }}</span>
+    <span class="admin-stat-label">Total users</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ new_users_7d }}</span>
+    <span class="admin-stat-label">New users, last 7d</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ new_users_30d }}</span>
+    <span class="admin-stat-label">New users, last 30d</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ active_users_7d }}</span>
+    <span class="admin-stat-label">Active users, last 7d</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ active_users_30d }}</span>
+    <span class="admin-stat-label">Active users, last 30d</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ total_sessions }}</span>
+    <span class="admin-stat-label">Total sessions analyzed</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ total_ranked_clips }}</span>
+    <span class="admin-stat-label">Ranked clips submitted</span>
+  </div>
+  <div class="admin-stat">
+    <span class="admin-stat-value">{{ total_friend_connections }}</span>
+    <span class="admin-stat-label">Friend connections</span>
+  </div>
+</div>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Signups &mdash; last 30 days</p>
+  {% if signups_chart_svg %}
+    {{ signups_chart_svg | safe }}
+  {% else %}
+    <p class="subtitle" style="margin:0;">Not enough data yet to draw a trend.</p>
+  {% endif %}
+</section>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Sessions analyzed &mdash; last 30 days</p>
+  {% if sessions_chart_svg %}
+    {{ sessions_chart_svg | safe }}
+  {% else %}
+    <p class="subtitle" style="margin:0;">Not enough data yet to draw a trend.</p>
+  {% endif %}
+</section>
+
+<div style="height: 1.5rem"></div>
+
+<section class="panel">
+  <p class="panel-title"><span class="dot"></span>Rank distribution</p>
+  <p class="subtitle" style="margin:0 0 1.3rem;">Current rank of every athlete who has submitted at least one ranked clip.</p>
+  <table class="admin-table">
+    <thead>
+      <tr><th>Rank</th><th>Athletes</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rank_distribution_rows %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td>{{ row.count }}</td>
+      </tr>
+      {% endfor %}
+      {% if unranked_athletes_with_a_submission %}
+      <tr>
+        <td>Below Bronze</td>
+        <td>{{ unranked_athletes_with_a_submission }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

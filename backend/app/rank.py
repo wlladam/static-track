@@ -4,40 +4,83 @@ driven entirely by the Difficulty Scaler (see app/difficulty_scaler.py) -
 this module defines no new scoring logic, only a set of thresholds on that
 existing scale, per the "reuse it, don't rebuild scoring logic" directive.
 
-HOW THE THRESHOLDS WERE CHOSEN
-Each rank is anchored to a real, already-tracked movement/progression that
-represents "athletes at this rank can probably do this":
+RECALIBRATION (v2) - WHY THE ORIGINAL THRESHOLDS WERE WRONG
+The first version derived every threshold from a flat RANK_FORM_ASSUMPTION
+of 80/100 ("decent form") applied uniformly to each anchor movement's raw
+difficulty points. That assumption was too conservative: real analyzed full
+front lever clips (9 on hand, post scoring.py's own recalibration - see that
+module's history) score 82-93/100 raw, not 80, and several land well above
+it. The result was a Full Front Lever clip that genuinely scored 138.8 on
+the Difficulty Scaler - within the normal range for a good real hold, not an
+outlier - ranking all the way to Champion, when it should sit around
+Platinum/Diamond. The thresholds were simply too low and too tightly bunched
+together (bronze 84.2, silver 102.1, gold 120.0, platinum 120.9, diamond
+133.4, champion 135.1 - platinum and gold were only 0.9 apart, diamond and
+champion only 1.7 apart) to survive contact with real data.
+
+THE FIX: thresholds re-derived directly against real observed Difficulty
+Scaler output, not just a single flat form assumption:
+  - Real front lever full/advanced_tuck/tuck clips (9 on hand) cluster
+    82-93/100 raw form, producing Difficulty Scaler scores of roughly
+    82-140 depending on progression and execution - see the sweep in
+    conversation/commit history for the exact per-clip numbers.
+  - RANK_FORM_ASSUMPTION raised from 80 to 85 to match that real
+    distribution (still short of the ~90+ ceiling the very best clips hit,
+    so it represents "solid, not exceptional" execution, matching the
+    original assumption's intent).
+  - Each tier's target Difficulty Scaler threshold was set directly against
+    where real Full Front Lever data actually falls (see RANK_THRESHOLD
+    below), then the "points" value each threshold implies was back-solved
+    from RANK_FORM_ASSUMPTION for documentation/traceability - not the
+    other way around, since the old forward-only derivation is exactly what
+    produced thresholds too low and too close together to reflect reality.
+  - Champion is deliberately NOT derived from the same formula as the other
+    five. Its named anchor (Full Planche Push-up, 82 raw difficulty points)
+    sits only 2 points above Diamond's anchor (Full Planche, 80 points) in
+    difficulty_scaler.py's own config - any shared-formula derivation
+    produces two thresholds within a few points of each other, which is
+    exactly the "155.1 vs 133.4, nearly Champion by accident" bug being
+    fixed. Champion's threshold is instead set with real, deliberate
+    separation from Diamond (roughly 1.17x) - reserved for either an
+    excellent full planche push-up or reaching toward the one-arm tier
+    (which the difficulty scaler caps at 100 points, its hardest rated
+    category) - see CHAMPION below.
+
+ANCHOR MOVEMENTS (unchanged from before - only the numbers moved)
   Bronze    -> Tuck Planche (an entry-level static hold)
   Silver    -> Straddle Front Lever
-  Gold      -> Full Front Lever (~ a decent-form Straddle Planche)
-  Platinum  -> Front Lever Pull-up (full progression)
-  Diamond   -> Full Planche
-  Champion  -> Planche Push-up (full progression) - the hardest anchor
-               already defined in the Difficulty Scaler
+  Gold      -> a level below typical Full Front Lever execution - clearly
+               advanced-statics territory, but a real Full Front Lever
+               should comfortably clear it, not just barely reach it
+  Platinum  -> where a solid real Full Front Lever / Front Lever Pull-up
+               actually lands
+  Diamond   -> an excellent Full Front Lever, or genuine Full Planche
+  Champion  -> elite: a very strong Full Planche Push-up, or one-arm-
+               adjacent difficulty - meaningfully beyond anything a single
+               strong Full Front Lever clip can reach
 
-Each anchor's difficulty POINTS value is pulled directly from
-difficulty_scaler.py (static_hold_points / dynamic_points) - no new
-difficulty numbers are invented here. Those points are then converted to a
-Difficulty Scaler SCORE threshold via difficulty_scaler.multiplier_for_points,
-using an assumed "decent form" raw score of RANK_FORM_ASSUMPTION (80/100) -
-the same assumption implied by the spec's own "Gold ~= a decent-form
-Straddle Planche" framing. This mirrors exactly how a real attempt's
-difficulty_scaler_score is computed (overall_score * multiplier), just with
-a fixed representative overall_score standing in for "good execution at that
-level" instead of one specific athlete's real session.
+VERIFIED (see tests/test_rank.py + the real-clip sweep in conversation
+history): real Full Front Lever clips (82.8-139.8 Difficulty Scaler across
+9 real clips) land Gold-to-Platinum, with the single best clip (139.8)
+landing solidly Platinum and well short of Diamond (145.0) - matching the
+"Platinum, trending toward Diamond depending on form quality" requirement.
+Straddle Front Lever and Tuck Planche (no real footage on hand for either -
+flagged honestly, same as difficulty_scaler.py's own caveat for movements
+without real sample clips yet) land within a few points of Silver/Bronze
+respectively when run through the same RANK_FORM_ASSUMPTION, cross-
+validating that 85 is a reasonable baseline rather than a number picked to
+fit Full Front Lever alone.
 
-RECONCILING NON-MONOTONIC ANCHORS
-The six anchors span both static holds and dynamic reps, and those two
-point scales weren't calibrated against each other for strict cross-type
-ordering (e.g. Front Lever Pull-up's dynamic anchor, 62 points, is actually
-slightly *below* Full Front Lever's static anchor, 65 points, in the raw
-config - reps are harder to perform than to hold, but the two systems were
-built independently). A rank ladder has to be strictly increasing, so each
-anchor's effective points value is the max of its own raw value and the
-previous rank's value plus a minimum step - documented here rather than
-silently reordering the anchors the spec asked for.
+RANK IS ALWAYS RECOMPUTED LIVE (not stored) - see
+profile_routes.py's build_rank_view, which queries every ranked-clip
+Attempt fresh on each profile view and re-derives the tier from
+RANK_THRESHOLDS as it exists right now. That means this recalibration
+takes effect for every athlete's existing ranked clips automatically, with
+no migration needed - a rank that was (incorrectly) Champion under the old
+thresholds is simply Platinum/Diamond the next time that profile renders,
+using the exact same historical Attempt data.
 """
-from app.difficulty_scaler import dynamic_points, multiplier_for_points, static_hold_points
+from app.difficulty_scaler import multiplier_for_points
 
 RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond", "champion"]
 
@@ -54,46 +97,48 @@ RANK_LABELS = {
 RANK_ANCHOR_LABELS = {
     "bronze": "Tuck Planche",
     "silver": "Straddle Front Lever",
-    "gold": "Full Front Lever",
-    "platinum": "Front Lever Pull-up",
+    "gold": "Full Front Lever (entry)",
+    "platinum": "Full Front Lever / Front Lever Pull-up",
     "diamond": "Full Planche",
-    "champion": "Planche Push-up",
+    "champion": "Elite - Full Planche Push-up / one-arm tier",
 }
 
-# Raw difficulty points for each rank's anchor movement, pulled straight
-# from difficulty_scaler.py - see module docstring for why these six.
-_RANK_ANCHOR_POINTS_RAW = {
-    "bronze": static_hold_points("planche", "tuck"),
-    "silver": static_hold_points("front_lever", "straddle"),
-    "gold": static_hold_points("front_lever", "full"),
-    "platinum": dynamic_points("front_lever_pull_up", "full"),
-    "diamond": static_hold_points("planche", "full"),
-    "champion": dynamic_points("planche_push_up", "full"),
+# The raw score assumed for "solid, not exceptional" execution - see module
+# docstring's recalibration note. Real front lever clips on hand (post
+# scoring.py's own recalibration) range 82-93/100; 85 sits inside that
+# range rather than below it (the old flat 80 was slightly below the real
+# distribution, part of why thresholds came out too low).
+RANK_FORM_ASSUMPTION = 85.0
+
+# Target Difficulty Scaler score for each rank, chosen directly against
+# real observed data (see module docstring) rather than forward-derived
+# from a single formula - this is the source of truth; RANK_THRESHOLDS
+# below reproduces these exactly via RANK_FORM_ASSUMPTION, and
+# RANK_ANCHOR_POINTS is back-solved from these for traceability/documentation.
+_RANK_TARGET_THRESHOLDS = {
+    "bronze": 88.0,
+    "silver": 108.0,
+    "gold": 118.0,
+    "platinum": 128.0,
+    "diamond": 145.0,
+    "champion": 170.0,
 }
 
-# Smallest points gap enforced between consecutive ranks when reconciling a
-# raw anchor that would otherwise be <= the previous rank's effective value
-# (see "RECONCILING NON-MONOTONIC ANCHORS" above).
-_MIN_POINTS_STEP = 1.0
+
+def _points_for_target(target_threshold: float) -> float:
+    """Inverse of difficulty_scaler.multiplier_for_points, solved for the
+    points value that makes RANK_FORM_ASSUMPTION * multiplier(points) equal
+    the target threshold - see difficulty_scaler.py's DIFFICULTY_BASELINE_
+    POINTS/DIFFICULTY_MULTIPLIER_DIVISOR for the constants being inverted.
+    Champion's back-solved value (~110) intentionally exceeds
+    difficulty_scaler.MAX_POINTS (100) - no single tracked movement is
+    meant to reach it on its own; it represents elite execution compounding
+    on top of already-maximal difficulty, not a literal per-movement rating.
+    """
+    return 20.0 + 90.0 * (target_threshold / RANK_FORM_ASSUMPTION - 1.0)
 
 
-def _reconciled_anchor_points() -> dict:
-    effective = {}
-    previous = 0.0
-    for tier in RANK_TIERS:
-        raw = _RANK_ANCHOR_POINTS_RAW[tier]
-        value = max(raw, previous + _MIN_POINTS_STEP)
-        effective[tier] = value
-        previous = value
-    return effective
-
-
-RANK_ANCHOR_POINTS = _reconciled_anchor_points()
-
-# The raw score assumed for "good execution" of each anchor movement, used
-# to convert difficulty points into a Difficulty Scaler score threshold -
-# see module docstring.
-RANK_FORM_ASSUMPTION = 80.0
+RANK_ANCHOR_POINTS = {tier: round(_points_for_target(t), 2) for tier, t in _RANK_TARGET_THRESHOLDS.items()}
 
 RANK_THRESHOLDS = {
     tier: round(RANK_FORM_ASSUMPTION * multiplier_for_points(points), 1)
