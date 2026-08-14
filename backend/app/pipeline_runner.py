@@ -26,16 +26,20 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Render sets RENDER=true in every service's environment automatically - a
 # free-tier CPU is a fraction of the speed of a real machine, and a real
 # clip that processes in well under a minute locally was clocked at 5+
-# minutes (and still incomplete) there. Two things cut real, unavoidable
-# work rather than just papering over it with a longer timeout:
-#   - skip_debug_overlay: the skeleton-overlay video is a nice-to-have for
-#     the report page, not needed for scoring, but generating it means
-#     re-decoding + drawing + re-encoding the ENTIRE video a second time.
-#   - a lower sample rate: fewer frames sent through MediaPipe's (the
-#     actual CPU-heavy step) pose inference, at some cost to temporal
-#     resolution for rep detection.
-# Both are skipped/reduced only on a detected slow host - local dev and
-# tests keep full fidelity (target_fps=5.0, overlay always generated).
+# minutes (and still incomplete) there before this mitigation. Sampling at
+# a lower rate cuts the real, unavoidable cost of MediaPipe's pose
+# inference (the actual CPU-heavy step), at some cost to temporal
+# resolution for rep detection - reduced only on a detected slow host;
+# local dev and tests keep full fidelity (target_fps=5.0).
+#
+# The debug overlay video (skeleton drawn over the original frames) used
+# to be skipped entirely on a slow host too, on the theory that a second
+# decode+draw+encode pass was too expensive - but that pass does no ML
+# inference at all (the landmarks are already known from pass 1), it's
+# cheap OpenCV drawing/encoding at the same reduced TARGET_FPS, not a
+# second round of pose detection. Skipping it meant the report page's
+# skeleton overlay section never rendered in production at all, not a
+# performance win worth losing that feature over - re-enabled everywhere.
 IS_SLOW_HOST = bool(os.environ.get("RENDER"))
 TARGET_FPS = 2.5 if IS_SLOW_HOST else 5.0
 
@@ -78,9 +82,7 @@ def process_video(
     auto-classified from a single side-view camera.
     """
     data_dir = Path(data_dir) if data_dir else DATA_DIR
-    json_path = run_pose_pipeline(
-        str(video_path), target_fps=TARGET_FPS, output_dir=data_dir, skip_debug_overlay=IS_SLOW_HOST
-    )
+    json_path = run_pose_pipeline(str(video_path), target_fps=TARGET_FPS, output_dir=data_dir)
     records = json.loads(json_path.read_text())
 
     debug_overlay_path = data_dir / "debug_overlays" / f"{video_path.stem}_overlay.mp4"

@@ -27,13 +27,15 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def run(video_path: str, target_fps: float, output_dir: Path, skip_debug_overlay: bool = False) -> Path:
-    """skip_debug_overlay=True cuts pass 2 (re-decoding + drawing + encoding
-    the whole video a second time, purely to produce the optional skeleton-
-    overlay video) - real cost on a CPU-constrained host, and not needed for
-    scoring, only for the report page's "watch the overlay" nice-to-have.
-    Defaults to False (unchanged behavior for existing callers) - see
-    app/pipeline_runner.py for where this gets enabled automatically on a
-    slow/free-tier deploy.
+    """skip_debug_overlay=True skips pass 2 (re-decoding + drawing + encoding
+    the whole video a second time, to produce the optional skeleton-overlay
+    video) - not needed for scoring, only for the report page's "watch the
+    overlay" feature. Available for callers that genuinely don't want it
+    (e.g. a fast CLI dry run), but app/pipeline_runner.py - the real web
+    upload path - always leaves this on: pass 2 does no ML inference (the
+    landmarks are already known from pass 1), just cheap OpenCV drawing/
+    encoding at the same reduced sample rate a slow host already uses, so
+    it was never the expensive part worth cutting.
     """
     video_path = Path(video_path)
     pose_output_dir = output_dir / "pose_output"
